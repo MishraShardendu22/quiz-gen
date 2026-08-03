@@ -3,9 +3,11 @@ package storage
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/MishraShardendu22/quiz-gen/model"
 	"github.com/MishraShardendu22/quiz-gen/service/loader"
+	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -14,25 +16,26 @@ import (
 // Iterates over loaded topics, resolves/creates each topic's database UUID,
 // then processes its documents with that UUID
 func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) error {
-	// start tansaction
+	start := time.Now()
+	util.Info("starting content synchronization", "topics", len(loadedTopics))
+
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// track which documents exist on filesystem
-	// topicID|path -> true
 	filesystemDocs := make(map[string]bool)
+	stats := &syncStats{}
 
 	// Process each topic and its documents
 	for _, loadedTopic := range loadedTopics {
+		util.Info("syncing topic", "name", loadedTopic.Name, "documents", len(loadedTopic.Documents))
 
 		// Look up or create topic
 		var topicID string
 		err := tx.QueryRow("SELECT id FROM topics WHERE name = ?", loadedTopic.Name).Scan(&topicID)
 
-		// New topic: generate UUID and inse// topicID|path -> true
 		if err == sql.ErrNoRows {
 			topicID = uuid.Must(uuid.NewV7()).String()
 			if _, err := tx.Exec(
@@ -41,10 +44,14 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 			); err != nil {
 				return fmt.Errorf("insert topic %s: %w", loadedTopic.Name, err)
 			}
+			util.Info("created new topic", "name", loadedTopic.Name, "id", topicID)
+			stats.topicsCreated++
 
-			// Existing topic: use its UUID
 		} else if err != nil {
 			return fmt.Errorf("query topic %s: %w", loadedTopic.Name, err)
+		} else {
+			util.Info("using existing topic", "name", loadedTopic.Name, "id", topicID)
+			stats.topicsExisting++
 		}
 
 		// Process this topic's documents with its resolved UUID
@@ -59,8 +66,8 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 				topicID, doc.Path,
 			).Scan(&existingID, &existingHash)
 
-			// New document: insert it
 			if err == sql.ErrNoRows {
+				// New document: insert it
 				newID := uuid.Must(uuid.NewV7()).String()
 				if _, err := tx.Exec(
 					"INSERT INTO documents (id, topic_id, name, path, content_hash) VALUES (?, ?, ?, ?, ?)",
@@ -70,18 +77,23 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 				}
 
 				// Chunk and store
-				if err := insertChunks(tx, topicID, newID, doc.Content); err != nil {
+				chunkCount, err := insertChunks(tx, topicID, newID, doc.Content)
+				if err != nil {
 					return err
 				}
 
-			// error handling for existing document
+				util.Info("created new document", "topic", loadedTopic.Name, "path", doc.Path, "chunks", chunkCount)
+				stats.documentsCreated++
+				stats.chunksCreated += chunkCount
+
 			} else if err != nil {
 				return fmt.Errorf("query document %s: %w", doc.Path, err)
-
-			// Document exists: check hash
 			} else {
+				// Document exists: check hash
 				if existingHash == doc.Hash {
 					// Hash unchanged: skip completely
+					util.Info("skipping unchanged document", "topic", loadedTopic.Name, "path", doc.Path)
+					stats.documentsSkipped++
 					continue
 				}
 
@@ -97,9 +109,14 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 					return fmt.Errorf("update document %s: %w", doc.Path, err)
 				}
 
-				if err := insertChunks(tx, topicID, existingID, doc.Content); err != nil {
+				chunkCount, err := insertChunks(tx, topicID, existingID, doc.Content)
+				if err != nil {
 					return err
 				}
+
+				util.Info("updated document", "topic", loadedTopic.Name, "path", doc.Path, "chunks", chunkCount)
+				stats.documentsUpdated++
+				stats.chunksCreated += chunkCount
 			}
 		}
 	}
@@ -126,6 +143,8 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 			if _, err := tx.Exec("DELETE FROM documents WHERE id = ?", id); err != nil {
 				return fmt.Errorf("delete orphaned document: %w", err)
 			}
+			util.Info("deleted orphaned document", "path", path, "id", id)
+			stats.documentsDeleted++
 		}
 	}
 
@@ -137,11 +156,36 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
+
+	elapsed := time.Since(start)
+	util.Info("synchronization complete",
+		"duration_ms", elapsed.Milliseconds(),
+		"topics_created", stats.topicsCreated,
+		"topics_existing", stats.topicsExisting,
+		"documents_created", stats.documentsCreated,
+		"documents_updated", stats.documentsUpdated,
+		"documents_unchanged", stats.documentsSkipped,
+		"documents_deleted", stats.documentsDeleted,
+		"chunks_created", stats.chunksCreated,
+	)
+
 	return nil
 }
 
+// syncStats tracks synchronization metrics
+type syncStats struct {
+	topicsCreated    int
+	topicsExisting   int
+	documentsCreated int
+	documentsUpdated int
+	documentsSkipped int
+	documentsDeleted int
+	chunksCreated    int
+}
+
 // insertChunks chunks a document and inserts chunks into database
-func insertChunks(tx *sql.Tx, topicID, documentID, content string) error {
+// Returns the number of chunks created
+func insertChunks(tx *sql.Tx, topicID, documentID, content string) (int, error) {
 	chunks := loader.SplitByHeading(content)
 	for i, chunk := range chunks {
 		if _, err := tx.Exec(
@@ -152,8 +196,8 @@ func insertChunks(tx *sql.Tx, topicID, documentID, content string) error {
 			i,
 			chunk,
 		); err != nil {
-			return fmt.Errorf("insert chunk: %w", err)
+			return 0, fmt.Errorf("insert chunk: %w", err)
 		}
 	}
-	return nil
+	return len(chunks), nil
 }

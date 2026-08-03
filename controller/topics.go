@@ -18,7 +18,8 @@ func GetTopics(db *sql.DB) fiber.Handler {
 			ORDER BY t.name
 		`)
 		if err != nil {
-			return util.Error(c, 500, "Failed to fetch topics", err)
+			util.Error("failed to fetch topics from database", "error", err.Error())
+			return util.ErrorResponse(c, 500, "Failed to fetch topics", err)
 		}
 		defer rows.Close()
 
@@ -29,7 +30,8 @@ func GetTopics(db *sql.DB) fiber.Handler {
 			var docCount int
 
 			if err := rows.Scan(&id, &name, &status, &docCount); err != nil {
-				return util.Error(c, 500, "Failed to fetch topics", err)
+				util.Error("failed to scan topic row", "error", err.Error())
+				return util.ErrorResponse(c, 500, "Failed to fetch topics", err)
 			}
 
 			topics = append(topics, map[string]interface{}{
@@ -41,9 +43,11 @@ func GetTopics(db *sql.DB) fiber.Handler {
 		}
 
 		if err := rows.Err(); err != nil {
-			return util.Error(c, 500, "Failed to fetch topics", err)
+			util.Error("error iterating topic rows", "error", err.Error())
+			return util.ErrorResponse(c, 500, "Failed to fetch topics", err)
 		}
 
-		return util.JSON(c, 200, "Topics retrieved successfully", topics)
+		util.Info("topics retrieved successfully", "count", len(topics))
+		return util.JSONResponse(c, 200, "Topics retrieved successfully", topics)
 	}
 }

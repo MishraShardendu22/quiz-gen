@@ -1,54 +1,51 @@
 package main
 
 import (
-	"fmt"
-	"log"
-
 	"github.com/MishraShardendu22/quiz-gen/router"
 	"github.com/MishraShardendu22/quiz-gen/service/db"
 	"github.com/MishraShardendu22/quiz-gen/service/loader"
 	"github.com/MishraShardendu22/quiz-gen/service/storage"
+	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/gofiber/fiber/v2"
 )
 
 func main() {
+	util.Info("starting application")
+
 	// Initialize database
 	sqlDB, err := db.Init("./quiz.db")
 	if err != nil {
-		log.Fatalf("Database init failed: %v", err)
+		util.Error("database initialization failed", "error", err.Error())
+		panic(err)
 	}
 	defer sqlDB.Close()
 
 	// Run migrations
 	if err := db.Migrate(sqlDB); err != nil {
-		log.Fatalf("Migration failed: %v", err)
+		util.Error("migration failed", "error", err.Error())
+		panic(err)
 	}
 
 	// Load content from filesystem
 	loadedTopics, err := loader.LoadContent("./content-pack")
 	if err != nil {
-		log.Fatalf("Load content failed: %v", err)
-	}
-
-	// Count total documents for logging
-	totalDocs := 0
-	for _, lt := range loadedTopics {
-		totalDocs += len(lt.Documents)
+		util.Error("content discovery failed", "error", err.Error())
+		panic(err)
 	}
 
 	// Ingest data into database
 	if err := storage.SyncTopicsDocumentsChunks(sqlDB, loadedTopics); err != nil {
-		log.Fatalf("Sync failed: %v", err)
+		util.Error("synchronization failed", "error", err.Error())
+		panic(err)
 	}
-
-	fmt.Printf("Ingestion complete: %d topics, %d documents\n", len(loadedTopics), totalDocs)
 
 	// Start HTTP server
 	app := fiber.New()
 	router.Setup(app, sqlDB)
 
-	fmt.Println("Server starting on :9000")
+	util.Info("starting http server", "address", ":9000")
 	if err := app.Listen(":9000"); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		util.Error("server failed", "error", err.Error())
+		panic(err)
 	}
 }

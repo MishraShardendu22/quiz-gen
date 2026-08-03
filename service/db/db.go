@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MishraShardendu22/quiz-gen/util"
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // Init initializes the database with proper configuration
 func Init(dbPath string) (*sql.DB, error) {
+	util.Info("initializing database", "path", dbPath)
+
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
@@ -23,11 +26,14 @@ func Init(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
 
+	util.Info("database initialized successfully")
 	return db, nil
 }
 
 // Migrate creates all necessary tables
 func Migrate(db *sql.DB) error {
+	util.Info("running database migrations")
+
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS topics (
 			id TEXT PRIMARY KEY,
@@ -76,5 +82,7 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("execute statement: %w", err)
 		}
 	}
+
+	util.Info("database migrations completed")
 	return nil
 }

@@ -8,14 +8,17 @@ import (
 	"strings"
 
 	"github.com/MishraShardendu22/quiz-gen/model"
+	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/google/uuid"
 )
 
 // LoadContent discovers topics and documents from filesystem with content hashes
 // Returns topics grouped with their documents, expressing ownership naturally
 func LoadContent(contentPackDir string) ([]model.LoadedTopic, error) {
+	util.Info("starting content discovery", "directory", contentPackDir)
+
 	var loadedTopics []model.LoadedTopic
-	topicsMap := make(map[string]*model.LoadedTopic) // name -> LoadedTopic
+	topicsMap := make(map[string]*model.LoadedTopic)
 
 	entries, err := os.ReadDir(contentPackDir)
 	if err != nil {
@@ -34,15 +37,30 @@ func LoadContent(contentPackDir string) ([]model.LoadedTopic, error) {
 			Documents: []model.Document{},
 		}
 
+		util.Info("discovering topic", "name", entry.Name())
+
 		if err := walkMarkdownFiles(topicPath, topicPath, &loadedTopic.Documents); err != nil {
 			return nil, err
 		}
+
+		util.Info("topic discovery complete", "name", entry.Name(), "documents", len(loadedTopic.Documents))
 
 		topicsMap[entry.Name()] = loadedTopic
 		loadedTopics = append(loadedTopics, *loadedTopic)
 	}
 
+	util.Info("content discovery complete", "topics", len(loadedTopics), "total_documents", countTotalDocuments(loadedTopics))
+
 	return loadedTopics, nil
+}
+
+// countTotalDocuments returns the total number of documents across all topics
+func countTotalDocuments(topics []model.LoadedTopic) int {
+	count := 0
+	for _, t := range topics {
+		count += len(t.Documents)
+	}
+	return count
 }
 
 // walkMarkdownFiles recursively finds markdown files and computes their hashes

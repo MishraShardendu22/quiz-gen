@@ -5,7 +5,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-func JSON[T any](c *fiber.Ctx, status int, message string, data T) error {
+func JSONResponse[T any](c *fiber.Ctx, status int, message string, data T) error {
 	return c.Status(status).JSON(model.Response[T]{
 		Code:    status,
 		Success: true,
@@ -14,7 +14,7 @@ func JSON[T any](c *fiber.Ctx, status int, message string, data T) error {
 	})
 }
 
-func Error(c *fiber.Ctx, status int, message string, err error) error {
+func ErrorResponse(c *fiber.Ctx, status int, message string, err error) error {
 	resp := model.ErrorResponse{
 		Code:    status,
 		Success: false,
