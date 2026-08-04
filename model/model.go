@@ -37,10 +37,14 @@ const (
 
 // Session represents a single quiz generation request
 type Session struct {
-	ID        uuid.UUID     `json:"id"`
-	TopicID   uuid.UUID     `json:"topic_id"`
-	Status    SessionStatus `json:"status"`
-	CreatedAt int64         `json:"created_at"`
-	UpdatedAt int64         `json:"updated_at"`
-	Error     *string       `json:"error,omitempty"`
+	ID             uuid.UUID     `json:"id"`
+	TopicID        uuid.UUID     `json:"topic_id"`
+	Status         SessionStatus `json:"status"`
+	RequestedCount int           `json:"requested_count"`
+	GeneratedCount int           `json:"generated_count"`
+	TokenBudget    int           `json:"token_budget"`
+	TokensUsed     int           `json:"tokens_used"`
+	CreatedAt      int64         `json:"created_at"`
+	UpdatedAt      int64         `json:"updated_at"`
+	Error          *string       `json:"error,omitempty"`
 }

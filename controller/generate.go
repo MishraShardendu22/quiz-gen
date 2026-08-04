@@ -2,6 +2,7 @@ package controller
 
 import (
 	"database/sql"
+	"strconv"
 
 	"github.com/MishraShardendu22/quiz-gen/service/worker"
 	"github.com/MishraShardendu22/quiz-gen/util"
@@ -11,7 +12,9 @@ import (
 
 // GenerateRequest represents a quiz generation request
 type GenerateRequest struct {
-	TopicID string `json:"topic_id"`
+	TopicID        string `json:"topic_id"`
+	RequestedCount int    `json:"requested_count"`
+	TokenBudget    int    `json:"token_budget"`
 }
 
 // GenerateResponse represents the response to a generation request
@@ -40,6 +43,20 @@ func Generate(db *sql.DB) fiber.Handler {
 			return util.ErrorResponse(c, 400, "Invalid topic_id format", err)
 		}
 
+		// Validate requested_count
+		if req.RequestedCount <= 0 {
+			return util.ErrorResponse(c, 400, "requested_count must be greater than 0", nil)
+		}
+
+		if req.RequestedCount > worker.MaxRequestedCount {
+			return util.ErrorResponse(c, 400, "requested_count exceeds maximum of "+strconv.Itoa(worker.MaxRequestedCount), nil)
+		}
+
+		// Validate token_budget
+		if req.TokenBudget <= 0 {
+			return util.ErrorResponse(c, 400, "token_budget must be greater than 0", nil)
+		}
+
 		// Verify topic exists in database
 		var topicExists bool
 		err = db.QueryRow("SELECT COUNT(*) > 0 FROM topics WHERE id = ?", topicID.String()).Scan(&topicExists)
@@ -53,7 +70,7 @@ func Generate(db *sql.DB) fiber.Handler {
 		}
 
 		// Create session with pending status
-		session, err := worker.CreateSession(db, topicID)
+		session, err := worker.CreateSession(db, topicID, req.RequestedCount, req.TokenBudget)
 		if err != nil {
 			util.Error("failed to create session", "error", err.Error())
 			return util.ErrorResponse(c, 500, "Failed to create session", err)
@@ -66,7 +83,7 @@ func Generate(db *sql.DB) fiber.Handler {
 			return util.ErrorResponse(c, 503, "Generation queue is full", err)
 		}
 
-		util.Info("generation request received", "session_id", session.ID.String(), "topic_id", topicID.String())
+		util.Info("generation request received", "session_id", session.ID.String(), "topic_id", topicID.String(), "requested_count", req.RequestedCount)
 
 		// Return 202 Accepted immediately
 		response := GenerateResponse{

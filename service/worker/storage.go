@@ -9,41 +9,49 @@ import (
 	"github.com/google/uuid"
 )
 
+// MaxRequestedCount is the maximum number of questions that can be requested per session
+const MaxRequestedCount = 100
+
 // CreateSession inserts a new session with pending status into the database
-func CreateSession(db *sql.DB, topicID uuid.UUID) (*model.Session, error) {
+func CreateSession(db *sql.DB, topicID uuid.UUID, requestedCount, tokenBudget int) (*model.Session, error) {
 	now := time.Now().Unix()
 	sessionID := uuid.Must(uuid.NewV7()).String()
 
 	_, err := db.Exec(`
-		INSERT INTO sessions (id, topic_id, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?)
-	`, sessionID, topicID.String(), model.SessionPending, now, now)
+		INSERT INTO sessions (id, topic_id, status, requested_count, token_budget, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, sessionID, topicID.String(), model.SessionPending, requestedCount, tokenBudget, now, now)
 
 	if err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
 
 	return &model.Session{
-		ID:        uuid.MustParse(sessionID),
-		TopicID:   topicID,
-		Status:    model.SessionPending,
-		CreatedAt: now,
-		UpdatedAt: now,
-		Error:     nil,
+		ID:             uuid.MustParse(sessionID),
+		TopicID:        topicID,
+		Status:         model.SessionPending,
+		RequestedCount: requestedCount,
+		GeneratedCount: 0,
+		TokenBudget:    tokenBudget,
+		TokensUsed:     0,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+		Error:          nil,
 	}, nil
 }
 
 // GetSession retrieves a session by ID from the database
 func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 	var id, topicID, status string
+	var requestedCount, generatedCount, tokenBudget, tokensUsed int
 	var createdAt, updatedAt int64
 	var errMsg *string
 
 	err := db.QueryRow(`
-		SELECT id, topic_id, status, created_at, updated_at, error
+		SELECT id, topic_id, status, requested_count, generated_count, token_budget, tokens_used, created_at, updated_at, error
 		FROM sessions
 		WHERE id = ?
-	`, sessionID.String()).Scan(&id, &topicID, &status, &createdAt, &updatedAt, &errMsg)
+	`, sessionID.String()).Scan(&id, &topicID, &status, &requestedCount, &generatedCount, &tokenBudget, &tokensUsed, &createdAt, &updatedAt, &errMsg)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", sessionID.String())
@@ -53,13 +61,62 @@ func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 	}
 
 	return &model.Session{
-		ID:        uuid.MustParse(id),
-		TopicID:   uuid.MustParse(topicID),
-		Status:    model.SessionStatus(status),
-		CreatedAt: createdAt,
-		UpdatedAt: updatedAt,
-		Error:     errMsg,
+		ID:             uuid.MustParse(id),
+		TopicID:        uuid.MustParse(topicID),
+		Status:         model.SessionStatus(status),
+		RequestedCount: requestedCount,
+		GeneratedCount: generatedCount,
+		TokenBudget:    tokenBudget,
+		TokensUsed:     tokensUsed,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
+		Error:          errMsg,
 	}, nil
+}
+
+// GetAllSessions retrieves all sessions ordered by newest first
+func GetAllSessions(db *sql.DB) ([]*model.Session, error) {
+	rows, err := db.Query(`
+		SELECT id, topic_id, status, requested_count, generated_count, token_budget, tokens_used, created_at, updated_at, error
+		FROM sessions
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*model.Session
+	for rows.Next() {
+		var id, topicID, status string
+		var requestedCount, generatedCount, tokenBudget, tokensUsed int
+		var createdAt, updatedAt int64
+		var errMsg *string
+
+		err := rows.Scan(&id, &topicID, &status, &requestedCount, &generatedCount, &tokenBudget, &tokensUsed, &createdAt, &updatedAt, &errMsg)
+		if err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+
+		sessions = append(sessions, &model.Session{
+			ID:             uuid.MustParse(id),
+			TopicID:        uuid.MustParse(topicID),
+			Status:         model.SessionStatus(status),
+			RequestedCount: requestedCount,
+			GeneratedCount: generatedCount,
+			TokenBudget:    tokenBudget,
+			TokensUsed:     tokensUsed,
+			CreatedAt:      createdAt,
+			UpdatedAt:      updatedAt,
+			Error:          errMsg,
+		})
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return sessions, nil
 }
 
 // UpdateSessionStatus updates only the status and updated_at timestamp
@@ -129,8 +186,8 @@ func GetTopic(db *sql.DB, topicID uuid.UUID) (*model.Topic, error) {
 	}
 
 	topic := &model.Topic{
-		ID:   uuid.MustParse(id),
-		Name: name,
+		ID:     uuid.MustParse(id),
+		Name:   name,
 		Status: status,
 	}
 
