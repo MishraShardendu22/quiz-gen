@@ -10,4 +10,5 @@ import (
 // Setup registers all routes
 func Setup(app *fiber.App, db *sql.DB) {
 	app.Get("/topics", controller.GetTopics(db))
+	app.Post("/generate", controller.Generate(db))
 }

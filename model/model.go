@@ -24,3 +24,23 @@ type LoadedTopic struct {
 	Name      string
 	Documents []Document
 }
+
+// SessionStatus represents the lifecycle state of a quiz generation session
+type SessionStatus string
+
+const (
+	SessionPending    SessionStatus = "pending"
+	SessionProcessing SessionStatus = "processing"
+	SessionCompleted  SessionStatus = "completed"
+	SessionFailed     SessionStatus = "failed"
+)
+
+// Session represents a single quiz generation request
+type Session struct {
+	ID        uuid.UUID     `json:"id"`
+	TopicID   uuid.UUID     `json:"topic_id"`
+	Status    SessionStatus `json:"status"`
+	CreatedAt int64         `json:"created_at"`
+	UpdatedAt int64         `json:"updated_at"`
+	Error     *string       `json:"error,omitempty"`
+}

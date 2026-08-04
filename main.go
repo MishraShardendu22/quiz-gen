@@ -5,6 +5,7 @@ import (
 	"github.com/MishraShardendu22/quiz-gen/service/db"
 	"github.com/MishraShardendu22/quiz-gen/service/loader"
 	"github.com/MishraShardendu22/quiz-gen/service/storage"
+	"github.com/MishraShardendu22/quiz-gen/service/worker"
 	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/gofiber/fiber/v2"
 )
@@ -42,6 +43,9 @@ func main() {
 	// Start HTTP server
 	app := fiber.New()
 	router.Setup(app, sqlDB)
+
+	// Start background worker for session processing
+	worker.Start(sqlDB)
 
 	util.Info("starting http server", "address", ":9000")
 	if err := app.Listen(":9000"); err != nil {
