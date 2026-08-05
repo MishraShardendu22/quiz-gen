@@ -22,7 +22,7 @@ func SplitClosestTo500Lines(content string) []string {
 
 	// Append the last chunk if it's not empty
 	// 499 lines in last chunk so it wont be added above
-	// this basically end ka chunk append ho sakt hai naa hua ho 
+	// this basically end ka chunk append ho sakt hai naa hua ho
 	if len(currentChunk) > 0 {
 		chunk := strings.Join(currentChunk, "\n")
 		if strings.TrimSpace(chunk) != "" {

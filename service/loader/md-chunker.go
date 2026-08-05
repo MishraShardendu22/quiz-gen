@@ -20,7 +20,7 @@ func SplitByHeading(content string) []string {
 		isH2 := strings.HasPrefix(trimmed, "## ") &&
 			(len(trimmed) == 3 || trimmed[3] != '#')
 
-		if (isH1 || isH2) && len(currentChunk) > 0  {
+		if (isH1 || isH2) && len(currentChunk) > 0 {
 			chunks = append(chunks, strings.Join(currentChunk, "\n"))
 			currentChunk = []string{line}
 		} else {

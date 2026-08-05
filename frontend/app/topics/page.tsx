@@ -28,50 +28,50 @@ export default function TopicsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Topics</h1>
-        <p className="text-gray-600 text-sm">Select a topic to generate quiz questions</p>
+        <h1 className="text-3xl font-extrabold text-white tracking-tight">Discovered Topics</h1>
+        <p className="text-slate-400 text-sm mt-1">Select a markdown content topic to generate quiz questions</p>
       </div>
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-700 text-sm">
+        <div className="p-4 bg-rose-950/50 border border-rose-800/80 rounded-xl text-rose-300 text-sm">
           {error}
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-slate-900/90 rounded-xl border border-slate-800 shadow-xl overflow-hidden backdrop-blur-md">
         {loading ? (
-          <div className="p-6 text-gray-500 text-sm">Loading topics...</div>
+          <div className="p-6 text-slate-400 text-sm">Loading topics...</div>
         ) : topics.length === 0 ? (
-          <div className="p-6 text-gray-500 text-sm">No topics available.</div>
+          <div className="p-6 text-slate-400 text-sm">No topics available.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-gray-600">
-              <thead className="bg-gray-50 text-gray-700 font-medium border-b border-gray-200">
+            <table className="w-full text-left text-sm text-slate-300 min-w-[600px]">
+              <thead className="bg-slate-800/60 text-slate-400 font-semibold tracking-wider uppercase text-xs border-b border-slate-800">
                 <tr>
-                  <th className="px-6 py-3">Topic Name</th>
-                  <th className="px-6 py-3">Document Count</th>
-                  <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3 text-right">Action</th>
+                  <th className="px-6 py-3.5">Topic Name</th>
+                  <th className="px-6 py-3.5">Document Count</th>
+                  <th className="px-6 py-3.5">Status</th>
+                  <th className="px-6 py-3.5 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-slate-800/60">
                 {topics.map((topic) => (
-                  <tr key={topic.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 font-semibold text-gray-900">
+                  <tr key={topic.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="px-6 py-4 font-bold text-white">
                       {topic.name}
                     </td>
-                    <td className="px-6 py-4">{topic.document_count}</td>
+                    <td className="px-6 py-4 font-medium text-slate-300">{topic.document_count}</td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 capitalize">
+                      <span className="inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 capitalize">
                         {topic.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <button
                         onClick={() => setSelectedTopic(topic)}
-                        className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs font-medium"
+                        className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-lg text-xs font-bold shadow-lg shadow-indigo-600/20 transition-all whitespace-nowrap"
                       >
-                        Generate Questions
+                        ⚡ Generate Questions
                       </button>
                     </td>
                   </tr>

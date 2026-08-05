@@ -5,12 +5,18 @@ import (
 	"os"
 )
 
+/*
+	Singleton logger instance for the application.
+	Provides structured logging with JSON output.
+	Supports different log levels: Info, Warn, Error, Debug.
+
+	Initialize logger with sensible defaults
+	Uses JSON output for structured logging
+*/
+
 var logger *slog.Logger
 
 func init() {
-	// Initialize logger with sensible defaults
-	// Uses JSON output for structured logging
-	// Can be enhanced later with handlers for different environments
 	opts := &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}
