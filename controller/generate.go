@@ -4,30 +4,17 @@ import (
 	"database/sql"
 	"strconv"
 
+	"github.com/MishraShardendu22/quiz-gen/model"
 	"github.com/MishraShardendu22/quiz-gen/service/worker"
 	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 )
 
-// GenerateRequest represents a quiz generation request
-type GenerateRequest struct {
-	TopicID        string `json:"topic_id"`
-	RequestedCount int    `json:"requested_count"`
-	TokenBudget    int    `json:"token_budget"`
-	IdempotencyKey string `json:"idempotency_key,omitempty"`
-}
-
-// GenerateResponse represents the response to a generation request
-type GenerateResponse struct {
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
-}
-
 // Generate handles POST /generate requests with Idempotency Key support
 func Generate(db *sql.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		var req GenerateRequest
+		var req model.GenerateRequest
 		if err := c.BodyParser(&req); err != nil {
 			return util.ErrorResponse(c, 400, "Invalid request body", err)
 		}
@@ -35,24 +22,6 @@ func Generate(db *sql.DB) fiber.Handler {
 		idempotencyKey := c.Get("Idempotency-Key")
 		if idempotencyKey == "" {
 			idempotencyKey = req.IdempotencyKey
-		}
-
-		// Check idempotency key if provided
-		if idempotencyKey != "" {
-			existingSessionIDStr, err := worker.GetIdempotencyKey(db, idempotencyKey)
-			if err == nil && existingSessionIDStr != "" {
-				existingID, parseErr := uuid.Parse(existingSessionIDStr)
-				if parseErr == nil {
-					existingSession, fetchErr := worker.GetSession(db, existingID)
-					if fetchErr == nil {
-						util.Info("idempotency hits", "session_id", existingSession.ID.String(), "idempotency_key", idempotencyKey)
-						return util.JSONResponse(c, 200, "Idempotent request matched existing session", GenerateResponse{
-							SessionID: existingSession.ID.String(),
-							Status:    string(existingSession.Status),
-						})
-					}
-				}
-			}
 		}
 
 		// Validate topic_id is provided
@@ -92,29 +61,34 @@ func Generate(db *sql.DB) fiber.Handler {
 			return util.ErrorResponse(c, 404, "Topic not found", nil)
 		}
 
-		// Create session with pending status
-		session, err := worker.CreateSession(db, topicID, req.RequestedCount, req.TokenBudget)
+		// Atomically check idempotency key and create session inside a single transaction
+		session, isExisting, err := worker.CreateSessionWithIdempotencyKey(db, topicID, req.RequestedCount, req.TokenBudget, idempotencyKey)
 		if err != nil {
 			util.Error("failed to create session", "error", err.Error())
 			return util.ErrorResponse(c, 500, "Failed to create session", err)
 		}
 
-		// Store idempotency key mapping if provided
-		if idempotencyKey != "" {
-			_ = worker.CreateIdempotencyKey(db, idempotencyKey, session.ID)
+		if isExisting {
+			util.Info("idempotency match found", "session_id", session.ID.String(), "idempotency_key", idempotencyKey)
+			return util.JSONResponse(c, 200, "Idempotent request matched existing session", model.GenerateResponse{
+				SessionID: session.ID.String(),
+				Status:    string(session.Status),
+			})
 		}
 
 		// Enqueue session for processing
 		err = worker.Enqueue(session.ID)
 		if err != nil {
-			util.Error("failed to enqueue session", "error", err.Error())
+			util.Error("failed to enqueue session", "session_id", session.ID.String(), "error", err.Error())
+			// Mark session as failed so no orphan pending session remains in DB
+			_ = worker.UpdateSessionError(db, session.ID, "Queue full")
 			return util.ErrorResponse(c, 503, "Generation queue is full", err)
 		}
 
 		util.Info("generation request received", "session_id", session.ID.String(), "topic_id", topicID.String(), "requested_count", req.RequestedCount)
 
 		// Return 202 Accepted immediately
-		response := GenerateResponse{
+		response := model.GenerateResponse{
 			SessionID: session.ID.String(),
 			Status:    string(session.Status),
 		}

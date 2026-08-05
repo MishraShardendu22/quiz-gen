@@ -15,19 +15,64 @@ const MaxRequestedCount = 100
 
 // CreateSession inserts a new session with pending status into the database
 func CreateSession(db *sql.DB, topicID uuid.UUID, requestedCount, tokenBudget int) (*model.Session, error) {
+	session, _, err := CreateSessionWithIdempotencyKey(db, topicID, requestedCount, tokenBudget, "")
+	return session, err
+}
+
+// CreateSessionWithIdempotencyKey atomically checks idempotency key and creates a session inside a transaction
+func CreateSessionWithIdempotencyKey(db *sql.DB, topicID uuid.UUID, requestedCount, tokenBudget int, idempotencyKey string) (*model.Session, bool, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, false, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Check idempotency key if supplied
+	if idempotencyKey != "" {
+		var existingSessionID string
+		err := tx.QueryRow(`
+			SELECT session_id FROM idempotency_keys WHERE idempotency_key = ?
+		`, idempotencyKey).Scan(&existingSessionID)
+
+		if err == nil && existingSessionID != "" {
+			existingUUID, parseErr := uuid.Parse(existingSessionID)
+			if parseErr == nil {
+				existingSession, getErr := GetSession(db, existingUUID)
+				if getErr == nil {
+					_ = tx.Commit()
+					return existingSession, true, nil
+				}
+			}
+		}
+	}
+
 	now := time.Now().Unix()
 	sessionID := uuid.Must(uuid.NewV7()).String()
 
-	_, err := db.Exec(`
+	_, err = tx.Exec(`
 		INSERT INTO sessions (id, topic_id, status, requested_count, token_budget, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, sessionID, topicID.String(), model.SessionPending, requestedCount, tokenBudget, now, now)
 
 	if err != nil {
-		return nil, fmt.Errorf("insert session: %w", err)
+		return nil, false, fmt.Errorf("insert session: %w", err)
 	}
 
-	return &model.Session{
+	if idempotencyKey != "" {
+		_, err = tx.Exec(`
+			INSERT INTO idempotency_keys (idempotency_key, session_id, created_at)
+			VALUES (?, ?, ?)
+		`, idempotencyKey, sessionID, now)
+		if err != nil {
+			return nil, false, fmt.Errorf("insert idempotency key: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, false, fmt.Errorf("commit session transaction: %w", err)
+	}
+
+	newSession := &model.Session{
 		ID:             uuid.MustParse(sessionID),
 		TopicID:        topicID,
 		Status:         model.SessionPending,
@@ -38,7 +83,9 @@ func CreateSession(db *sql.DB, topicID uuid.UUID, requestedCount, tokenBudget in
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		Error:          nil,
-	}, nil
+	}
+
+	return newSession, false, nil
 }
 
 // GetSession retrieves a session by ID from the database
@@ -103,6 +150,10 @@ func GetSessionQuestions(db *sql.DB, sessionID uuid.UUID) ([]model.Question, err
 		questions = append(questions, q)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return questions, nil
 }
 
@@ -130,6 +181,10 @@ func GetTopicQuestions(db *sql.DB, topicID uuid.UUID) ([]model.Question, error) 
 		q.ID = uuid.MustParse(qID)
 		q.SessionID = uuid.MustParse(sID)
 		questions = append(questions, q)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return questions, nil

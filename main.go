@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/MishraShardendu22/quiz-gen/router"
 	"github.com/MishraShardendu22/quiz-gen/service/db"
 	"github.com/MishraShardendu22/quiz-gen/service/loader"
@@ -40,8 +42,12 @@ func main() {
 		panic(err)
 	}
 
-	// Start HTTP server
-	app := fiber.New()
+	// Start HTTP server with production-grade timeouts
+	app := fiber.New(fiber.Config{
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	})
 	router.Setup(app, sqlDB)
 
 	// Start background worker for session processing

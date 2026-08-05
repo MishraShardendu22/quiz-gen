@@ -9,6 +9,7 @@ Existing Questions to Avoid:
 %s
 Do not generate questions that are semantically equivalent to any existing question.`
 
+// %d is the number of questions to generate
 const GeneratorPromptTemplate = `You are a quiz question generator. Generate exactly %d multiple-choice questions based ONLY on the provided context below.
 
 Context:

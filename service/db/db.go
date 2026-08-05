@@ -22,6 +22,20 @@ func Init(dbPath string) (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
+	// Configure SQLite PRAGMAs for concurrency, safety, and performance
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL;",
+		"PRAGMA busy_timeout=5000;",
+		"PRAGMA foreign_keys=ON;",
+		"PRAGMA synchronous=NORMAL;",
+	}
+
+	for _, p := range pragmas {
+		if _, err := db.Exec(p); err != nil {
+			util.Warn("failed to set SQLite pragma", "pragma", p, "error", err.Error())
+		}
+	}
+
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
@@ -30,7 +44,7 @@ func Init(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Migrate creates all necessary tables
+// Migrate creates all necessary tables and indexes
 func Migrate(db *sql.DB) error {
 	util.Info("running database migrations")
 
@@ -47,7 +61,7 @@ func Migrate(db *sql.DB) error {
 			name TEXT NOT NULL,
 			path TEXT NOT NULL,
 			content_hash TEXT NOT NULL,
-			FOREIGN KEY (topic_id) REFERENCES topics(id),
+			FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
 			UNIQUE(topic_id, path)
 		)`,
 		`CREATE TABLE IF NOT EXISTS chunks (
@@ -56,21 +70,21 @@ func Migrate(db *sql.DB) error {
 			document_id TEXT NOT NULL,
 			chunk_index INTEGER NOT NULL,
 			content TEXT NOT NULL,
-			FOREIGN KEY (topic_id) REFERENCES topics(id),
-			FOREIGN KEY (document_id) REFERENCES documents(id)
+			FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+			FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id TEXT PRIMARY KEY,
 			topic_id TEXT NOT NULL,
 			status TEXT NOT NULL DEFAULT 'pending',
-			requested_count INTEGER NOT NULL DEFAULT 0,
-			generated_count INTEGER NOT NULL DEFAULT 0,
-			token_budget INTEGER NOT NULL DEFAULT 0,
-			tokens_used INTEGER NOT NULL DEFAULT 0,
+			requested_count INTEGER NOT NULL DEFAULT 0 CHECK(requested_count > 0),
+			generated_count INTEGER NOT NULL DEFAULT 0 CHECK(generated_count >= 0),
+			token_budget INTEGER NOT NULL DEFAULT 0 CHECK(token_budget > 0),
+			tokens_used INTEGER NOT NULL DEFAULT 0 CHECK(tokens_used >= 0),
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL,
 			error TEXT,
-			FOREIGN KEY (topic_id) REFERENCES topics(id)
+			FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS questions (
 			id TEXT PRIMARY KEY,
@@ -80,27 +94,28 @@ func Migrate(db *sql.DB) error {
 			option_2 TEXT NOT NULL,
 			option_3 TEXT NOT NULL,
 			option_4 TEXT NOT NULL,
-			correct_answer INTEGER NOT NULL,
+			correct_answer INTEGER NOT NULL CHECK(correct_answer BETWEEN 0 AND 3),
 			explanation TEXT NOT NULL,
 			created_at INTEGER NOT NULL,
-			FOREIGN KEY (session_id) REFERENCES sessions(id)
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS usage (
 			id TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
-			prompt_tokens INTEGER NOT NULL,
-			completion_tokens INTEGER NOT NULL,
-			total_tokens INTEGER NOT NULL,
-			estimated_cost REAL NOT NULL,
+			prompt_tokens INTEGER NOT NULL CHECK(prompt_tokens >= 0),
+			completion_tokens INTEGER NOT NULL CHECK(completion_tokens >= 0),
+			total_tokens INTEGER NOT NULL CHECK(total_tokens >= 0),
+			estimated_cost REAL NOT NULL CHECK(estimated_cost >= 0.0),
 			created_at INTEGER NOT NULL,
-			FOREIGN KEY (session_id) REFERENCES sessions(id)
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS idempotency_keys (
 			idempotency_key TEXT PRIMARY KEY,
 			session_id TEXT NOT NULL,
 			created_at INTEGER NOT NULL,
-			FOREIGN KEY (session_id) REFERENCES sessions(id)
+			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_topic_id ON sessions(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_documents_topic_id ON documents(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,

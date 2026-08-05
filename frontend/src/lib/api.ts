@@ -54,6 +54,22 @@ export interface GenerateResponse {
   status: string;
 }
 
+export interface UsageBreakdown {
+  session_id: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+}
+
+export interface UsageReport {
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_tokens: number;
+  estimated_cost: number;
+  sessions: UsageBreakdown[];
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${config.backendBaseUrl}${path}`;
   const response = await fetch(url, {
@@ -86,4 +102,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  retrySession: (id: string, tokenBudget: number): Promise<GenerateResponse> =>
+    request<GenerateResponse>(`/sessions/${id}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ token_budget: tokenBudget }),
+    }),
+
+  getUsage: (): Promise<UsageReport> => request<UsageReport>("/usage"),
 };

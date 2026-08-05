@@ -74,6 +74,11 @@ func RetrySession(db *sql.DB) fiber.Handler {
 			return util.ErrorResponse(c, 404, "Session not found", err)
 		}
 
+		// Ensure ONLY failed sessions can be retried
+		if oldSession.Status != model.SessionFailed {
+			return util.ErrorResponse(c, 400, "Only failed sessions can be retried", nil)
+		}
+
 		// Create a completely new session copying topic_id, requested_count with new token_budget
 		newSession, err := worker.CreateSession(db, oldSession.TopicID, oldSession.RequestedCount, req.TokenBudget)
 		if err != nil {
@@ -86,10 +91,11 @@ func RetrySession(db *sql.DB) fiber.Handler {
 		// Enqueue new session
 		if err := worker.Enqueue(newSession.ID); err != nil {
 			util.Error("failed to enqueue retry session", "new_session_id", newSession.ID.String(), "error", err.Error())
+			_ = worker.UpdateSessionError(db, newSession.ID, "Queue full")
 			return util.ErrorResponse(c, 503, "Generation queue is full", err)
 		}
 
-		return util.JSONResponse(c, 202, "Retry session created", GenerateResponse{
+		return util.JSONResponse(c, 202, "Retry session created", model.GenerateResponse{
 			SessionID: newSession.ID.String(),
 			Status:    string(newSession.Status),
 		})
