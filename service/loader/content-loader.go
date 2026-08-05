@@ -95,7 +95,7 @@ func walkMarkdownFiles(topicRoot, dir string, documents *[]model.Document) error
 
 		relPath, err := filepath.Rel(topicRoot, fullPath)
 		if err != nil {
-			return fmt.Errorf("compute relative path: %w", fullPath, err)
+			return fmt.Errorf("compute relative path %s: %w", fullPath, err)
 		}
 
 		// Compute SHA256 hash of content

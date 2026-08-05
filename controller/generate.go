@@ -15,6 +15,7 @@ type GenerateRequest struct {
 	TopicID        string `json:"topic_id"`
 	RequestedCount int    `json:"requested_count"`
 	TokenBudget    int    `json:"token_budget"`
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // GenerateResponse represents the response to a generation request
@@ -23,13 +24,35 @@ type GenerateResponse struct {
 	Status    string `json:"status"`
 }
 
-// Generate handles POST /generate requests
-// Validates the request, creates a session, enqueues it, and returns immediately
+// Generate handles POST /generate requests with Idempotency Key support
 func Generate(db *sql.DB) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		var req GenerateRequest
 		if err := c.BodyParser(&req); err != nil {
 			return util.ErrorResponse(c, 400, "Invalid request body", err)
+		}
+
+		idempotencyKey := c.Get("Idempotency-Key")
+		if idempotencyKey == "" {
+			idempotencyKey = req.IdempotencyKey
+		}
+
+		// Check idempotency key if provided
+		if idempotencyKey != "" {
+			existingSessionIDStr, err := worker.GetIdempotencyKey(db, idempotencyKey)
+			if err == nil && existingSessionIDStr != "" {
+				existingID, parseErr := uuid.Parse(existingSessionIDStr)
+				if parseErr == nil {
+					existingSession, fetchErr := worker.GetSession(db, existingID)
+					if fetchErr == nil {
+						util.Info("idempotency hits", "session_id", existingSession.ID.String(), "idempotency_key", idempotencyKey)
+						return util.JSONResponse(c, 200, "Idempotent request matched existing session", GenerateResponse{
+							SessionID: existingSession.ID.String(),
+							Status:    string(existingSession.Status),
+						})
+					}
+				}
+			}
 		}
 
 		// Validate topic_id is provided
@@ -74,6 +97,11 @@ func Generate(db *sql.DB) fiber.Handler {
 		if err != nil {
 			util.Error("failed to create session", "error", err.Error())
 			return util.ErrorResponse(c, 500, "Failed to create session", err)
+		}
+
+		// Store idempotency key mapping if provided
+		if idempotencyKey != "" {
+			_ = worker.CreateIdempotencyKey(db, idempotencyKey, session.ID)
 		}
 
 		// Enqueue session for processing

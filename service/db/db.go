@@ -85,10 +85,28 @@ func Migrate(db *sql.DB) error {
 			created_at INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS usage (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			prompt_tokens INTEGER NOT NULL,
+			completion_tokens INTEGER NOT NULL,
+			total_tokens INTEGER NOT NULL,
+			estimated_cost REAL NOT NULL,
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS idempotency_keys (
+			idempotency_key TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_documents_topic_id ON documents(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_questions_session_id ON questions(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_usage_session_id ON usage(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_idempotency_keys_session_id ON idempotency_keys(session_id)`,
 	}
 
 	for _, stmt := range statements {

@@ -2,7 +2,7 @@ package model
 
 import "github.com/google/uuid"
 
-// Question represents a generated MCQ
+// Question represents a generated MCQ stored in database
 type Question struct {
 	ID            uuid.UUID `json:"id"`
 	SessionID     uuid.UUID `json:"session_id"`
@@ -27,4 +27,9 @@ type LLMQuestion struct {
 // LLMResponse represents the structure of the LLM response
 type LLMResponse struct {
 	Questions []LLMQuestion `json:"questions"`
+}
+
+// JudgeResult represents the response from the LLM Judge
+type JudgeResult struct {
+	Duplicates []int `json:"duplicates"`
 }

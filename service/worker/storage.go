@@ -106,6 +106,35 @@ func GetSessionQuestions(db *sql.DB, sessionID uuid.UUID) ([]model.Question, err
 	return questions, nil
 }
 
+// GetTopicQuestions retrieves all generated questions across all sessions for a specific topic
+func GetTopicQuestions(db *sql.DB, topicID uuid.UUID) ([]model.Question, error) {
+	rows, err := db.Query(`
+		SELECT q.id, q.session_id, q.question, q.option_1, q.option_2, q.option_3, q.option_4, q.correct_answer, q.explanation, q.created_at
+		FROM questions q
+		JOIN sessions s ON q.session_id = s.id
+		WHERE s.topic_id = ?
+		ORDER BY q.created_at ASC
+	`, topicID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []model.Question
+	for rows.Next() {
+		var q model.Question
+		var qID, sID string
+		if err := rows.Scan(&qID, &sID, &q.Question, &q.Option1, &q.Option2, &q.Option3, &q.Option4, &q.CorrectAnswer, &q.Explanation, &q.CreatedAt); err != nil {
+			return nil, err
+		}
+		q.ID = uuid.MustParse(qID)
+		q.SessionID = uuid.MustParse(sID)
+		questions = append(questions, q)
+	}
+
+	return questions, nil
+}
+
 // GetAllSessions retrieves all sessions ordered by newest first
 func GetAllSessions(db *sql.DB) ([]*model.Session, error) {
 	rows, err := db.Query(`
@@ -233,6 +262,10 @@ func GetTopic(db *sql.DB, topicID uuid.UUID) (*model.Topic, error) {
 
 // SaveQuestions inserts all generated questions inside a single transaction and updates generated_count
 func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questions []model.LLMQuestion) error {
+	if len(questions) == 0 {
+		return nil
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -283,4 +316,29 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 	}
 
 	return nil
+}
+
+// GetIdempotencyKey looks up an idempotency key and returns the mapped session_id if found
+func GetIdempotencyKey(db *sql.DB, key string) (string, error) {
+	var sessionID string
+	err := db.QueryRow(`
+		SELECT session_id FROM idempotency_keys WHERE idempotency_key = ?
+	`, key).Scan(&sessionID)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return sessionID, nil
+}
+
+// CreateIdempotencyKey stores an idempotency_key mapping
+func CreateIdempotencyKey(db *sql.DB, key string, sessionID uuid.UUID) error {
+	now := time.Now().Unix()
+	_, err := db.Exec(`
+		INSERT INTO idempotency_keys (idempotency_key, session_id, created_at)
+		VALUES (?, ?, ?)
+	`, key, sessionID.String(), now)
+	return err
 }

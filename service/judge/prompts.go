@@ -1,0 +1,3 @@
+package judge
+
+const JudgePromptTemplate = "You are a strict quiz question duplicate judge.\nDetermine whether any newly generated question is semantically equivalent to any existing question in topic context.\n\nExisting Questions:\n%s\n\nNewly Generated Questions (0-indexed):\n%s\n\nRequirements:\nCompare each newly generated question against ALL existing questions.\nIf a newly generated question asks the same concept or is semantically equivalent to any existing question, include its 0-based index in the \"duplicates\" list.\nReturn ONLY JSON.\nNo markdown.\nNo explanations outside JSON.\n\nJSON Schema:\n{\n  \"duplicates\": [0, 2]\n}"
