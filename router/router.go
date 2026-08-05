@@ -8,7 +8,18 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
-// Setup registers all routes and middlewares
+/*
+	Setup registers all routes and middlewares
+	
+	Allow all origins and headers for CORS - "*"
+	Allow GET, POST, OPTIONS methods for CORS
+
+	AllowHeaders - Idempotency-Key is included to support idempotent header.
+	(Rest will be explained in their files and services)
+
+	Simple Routes for the endpoints
+*/ 
+
 func Setup(app *fiber.App, db *sql.DB) {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
