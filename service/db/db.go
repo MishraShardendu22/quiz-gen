@@ -9,7 +9,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// Init initializes the database with proper configuration
+// initializes the database with proper configuration
+// treated as singleton here simply because it has one *sql.DB per database.
 func Init(dbPath string) (*sql.DB, error) {
 	util.Info("initializing database", "path", dbPath)
 
@@ -18,11 +19,20 @@ func Init(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
+	// set connection pool settings for SQLite
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Configure SQLite PRAGMAs for concurrency, safety, and performance
+	// using, write ahead logging for all operations that modify the database,
+	// busy_timeout is basically, if there is a lock for some variable wait for it to open for 5 seconds before throwing an error.
+	// foreign_keys enables enforcement of foreign key constraints in SQLite for the current database connection
+	// synchronous =
+		// OFF - SQLite rarely calls fsync()
+		// FULL - SQLite calls fsync() after every write operation
+		// NORMAL - SQLite calls fsync() less frequently than FULL but more frequently than OFF.
+	// fsync() is a system call that flushes data to disk, ensuring that it is physically written and not just cached in memory. 
+	// The synchronous setting determines how often SQLite calls fsync() to ensure data durability and integrity.
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
 		"PRAGMA busy_timeout=5000;",
@@ -44,7 +54,7 @@ func Init(dbPath string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Migrate creates all necessary tables and indexes
+// creates all necessary tables and indexes
 func Migrate(db *sql.DB) error {
 	util.Info("running database migrations")
 
@@ -115,13 +125,18 @@ func Migrate(db *sql.DB) error {
 			created_at INTEGER NOT NULL,
 			FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 		)`,
+
+		// Primary keys are indexed automatically
+	
+		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_topic_id ON sessions(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_documents_topic_id ON documents(topic_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_questions_session_id ON questions(session_id)`,
+				
 		`CREATE INDEX IF NOT EXISTS idx_usage_session_id ON usage(session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_questions_session_id ON questions(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_idempotency_keys_session_id ON idempotency_keys(session_id)`,
+		
+		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,
 	}
 
 	for _, stmt := range statements {

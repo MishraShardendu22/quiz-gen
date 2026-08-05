@@ -15,15 +15,17 @@ import (
 func main() {
 	util.Info("starting application")
 
-	// Initialize database
+	// Step - 1: Initialize the database
 	sqlDB, err := db.Init("./quiz.db")
 	if err != nil {
 		util.Error("database initialization failed", "error", err.Error())
 		panic(err)
 	}
+
+	// close the database connection when the application exits
 	defer sqlDB.Close()
 
-	// Run migrations
+	// run migrations
 	if err := db.Migrate(sqlDB); err != nil {
 		util.Error("migration failed", "error", err.Error())
 		panic(err)
