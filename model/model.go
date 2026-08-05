@@ -4,6 +4,43 @@ import (
 	"github.com/google/uuid"
 )
 
+/*
+	Base models for the application.
+	
+	Topic represents a logical topic under which documents are grouped.
+	Document represents a file belonging to a topic. The Path field stores the relative path from the topic root, preserving nested directories.
+
+	LoadedTopic is the in-memory representation produced by the content loader.
+		- It contains a topic name and every document discovered recursively under that topic.
+
+	Example:
+
+	content-pack/
+	└── privacy/
+		├── policy.md
+		└── nested/
+			└── access-control.md
+
+	becomes
+
+	LoadedTopic{
+		Name: "privacy",
+		Documents: []Document{
+			{
+				Name: "policy.md",
+				Path: "policy.md",
+			},
+			{
+				Name: "access-control.md",
+				Path: "nested/access-control.md",
+			},
+		},
+	}
+
+	SessionStatus represents the lifecycle state of a quiz generation session
+	Session represents a single quiz generation request
+*/
+
 type Topic struct {
 	ID       uuid.UUID  `json:"id"`
 	ParentID *uuid.UUID `json:"parent_id,omitempty"`
@@ -25,7 +62,6 @@ type LoadedTopic struct {
 	Documents []Document
 }
 
-// SessionStatus represents the lifecycle state of a quiz generation session
 type SessionStatus string
 
 const (
@@ -35,7 +71,6 @@ const (
 	SessionFailed     SessionStatus = "failed"
 )
 
-// Session represents a single quiz generation request
 type Session struct {
 	ID             uuid.UUID     `json:"id"`
 	TopicID        uuid.UUID     `json:"topic_id"`
