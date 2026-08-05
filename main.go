@@ -31,14 +31,14 @@ func main() {
 		panic(err)
 	}
 
-	// Load content from filesystem
+	// Step -2: Load content from filesystem
 	loadedTopics, err := loader.LoadContent("./content-pack")
 	if err != nil {
 		util.Error("content discovery failed", "error", err.Error())
 		panic(err)
 	}
 
-	// Ingest data into database
+	// Sterp 3 - Ingest data into database
 	if err := storage.SyncTopicsDocumentsChunks(sqlDB, loadedTopics); err != nil {
 		util.Error("synchronization failed", "error", err.Error())
 		panic(err)

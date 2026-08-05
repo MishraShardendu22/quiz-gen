@@ -2,6 +2,8 @@ package loader
 
 import "strings"
 
+// not used
+
 // split closest to 500 lines '\n'
 // SplitClosestTo500Lines splits content approximately every 500 lines
 // Never splits in the middle of a line. If a chunk exceeds 500 lines, starts a new chunk

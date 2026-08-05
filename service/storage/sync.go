@@ -12,62 +12,84 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// SyncTopicsDocumentsChunks synchronizes filesystem content with database incrementally
-// Iterates over loaded topics, resolves/creates each topic's database UUID,
-// then processes its documents with that UUID
+// syncStats tracks synchronization metrics
+type syncStats struct {
+	topicsCreated    int
+	topicsExisting   int
+	documentsCreated int
+	documentsUpdated int
+	documentsSkipped int
+	documentsDeleted int
+	chunksCreated    int
+}
+
+// essentially a big transaction that syncs the filesystem content with the database
+// it handles creating new topics/documents/chunks, updating existing ones, and deleting orphaned documents
 func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) error {
 	start := time.Now()
 	util.Info("starting content synchronization", "topics", len(loadedTopics))
 
+	// create a transaction to ensure atomicity of the synchronization process
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
+
+	// defer a rollback in case of any error; if everything succeeds, we'll commit at the end
 	defer tx.Rollback()
 
 	filesystemDocs := make(map[string]bool)
 	stats := &syncStats{}
 
-	// Process each topic and its documents
+	// process each topic and its documents
 	for _, loadedTopic := range loadedTopics {
 		util.Info("syncing topic", "name", loadedTopic.Name, "documents", len(loadedTopic.Documents))
 
-		// Look up or create topic
+		// look up or create topic
 		var topicID string
 		err := tx.QueryRow("SELECT id FROM topics WHERE name = ?", loadedTopic.Name).Scan(&topicID)
 
+		// topic does not exist, create it
 		if err == sql.ErrNoRows {
 			topicID = uuid.Must(uuid.NewV7()).String()
+
+			// insert new topic into the database
 			if _, err := tx.Exec(
 				"INSERT INTO topics (id, name, status) VALUES (?, ?, ?)",
 				topicID, loadedTopic.Name, "pending",
 			); err != nil {
 				return fmt.Errorf("insert topic %s: %w", loadedTopic.Name, err)
 			}
+
 			util.Info("created new topic", "name", loadedTopic.Name, "id", topicID)
 			stats.topicsCreated++
 
+		// some other error occurred while querying the topic
 		} else if err != nil {
 			return fmt.Errorf("query topic %s: %w", loadedTopic.Name, err)
+		
+		// topic already exists, use its ID
 		} else {
 			util.Info("using existing topic", "name", loadedTopic.Name, "id", topicID)
 			stats.topicsExisting++
 		}
 
-		// Process this topic's documents with its resolved UUID
+		// process this topic's documents with its resolved UUID
 		for _, doc := range loadedTopic.Documents {
+			// create a unique key for the document based on topic ID and document path
 			key := topicID + "|" + doc.Path
 			filesystemDocs[key] = true
 
-			// Check if document already exists
+			// check if document already exists
 			var existingID, existingHash string
 			err := tx.QueryRow(
 				"SELECT id, content_hash FROM documents WHERE topic_id = ? AND path = ?",
 				topicID, doc.Path,
 			).Scan(&existingID, &existingHash)
 
+			// document does not exist, insert it and its chunks
 			if err == sql.ErrNoRows {
-				// New document: insert it
+
 				newID := uuid.Must(uuid.NewV7()).String()
 				if _, err := tx.Exec(
 					"INSERT INTO documents (id, topic_id, name, path, content_hash) VALUES (?, ?, ?, ?, ?)",
@@ -76,7 +98,7 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 					return fmt.Errorf("insert document %s: %w", doc.Path, err)
 				}
 
-				// Chunk and store
+				// chunk and store
 				chunkCount, err := insertChunks(tx, topicID, newID, doc.Content)
 				if err != nil {
 					return err
@@ -85,11 +107,13 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 				util.Info("created new document", "topic", loadedTopic.Name, "path", doc.Path, "chunks", chunkCount)
 				stats.documentsCreated++
 				stats.chunksCreated += chunkCount
-
+			
+			// error while querying document
 			} else if err != nil {
 				return fmt.Errorf("query document %s: %w", doc.Path, err)
+
+			// document exists, check if content hash has changed
 			} else {
-				// Document exists: check hash
 				if existingHash == doc.Hash {
 					// Hash unchanged: skip completely
 					util.Info("skipping unchanged document", "topic", loadedTopic.Name, "path", doc.Path)
@@ -97,7 +121,7 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 					continue
 				}
 
-				// Hash changed: delete old chunks, update document, re-chunk
+				// hash changed: delete old chunks, update document, re-chunk
 				if _, err := tx.Exec("DELETE FROM chunks WHERE document_id = ?", existingID); err != nil {
 					return fmt.Errorf("delete old chunks for %s: %w", doc.Path, err)
 				}
@@ -109,6 +133,7 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 					return fmt.Errorf("update document %s: %w", doc.Path, err)
 				}
 
+				// chunk and store
 				chunkCount, err := insertChunks(tx, topicID, existingID, doc.Content)
 				if err != nil {
 					return err
@@ -121,7 +146,7 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 		}
 	}
 
-	// Delete documents that exist in DB but not on filesystem
+	// delete documents that exist in DB but not on filesystem
 	allDBDocs, err := tx.Query("SELECT id, topic_id, path FROM documents")
 	if err != nil {
 		return fmt.Errorf("query all documents: %w", err)
@@ -134,6 +159,7 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 	}
 	var orphans []orphanDoc
 
+	// iterate through all documents in the database and check if they exist on the filesystem
 	for allDBDocs.Next() {
 		var id, topicID, path string
 		if err := allDBDocs.Scan(&id, &topicID, &path); err != nil {
@@ -142,33 +168,41 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 		}
 
 		key := topicID + "|" + path
+		// create a unique key for the document based on topic ID and document path
 		if !filesystemDocs[key] {
 			orphans = append(orphans, orphanDoc{id: id, topicID: topicID, path: path})
 		}
 	}
+
+	// check for errors during iteration
 	if err := allDBDocs.Err(); err != nil {
 		allDBDocs.Close()
 		return err
 	}
+
 	allDBDocs.Close()
 
 	for _, doc := range orphans {
-		// Document not on filesystem: delete its chunks and the document
+		// document not on filesystem: delete its chunks and the document
 		if _, err := tx.Exec("DELETE FROM chunks WHERE document_id = ?", doc.id); err != nil {
 			return fmt.Errorf("delete chunks for orphaned doc: %w", err)
 		}
+
+		// delete the orphaned document itself
 		if _, err := tx.Exec("DELETE FROM documents WHERE id = ?", doc.id); err != nil {
 			return fmt.Errorf("delete orphaned document: %w", err)
 		}
+
 		util.Info("deleted orphaned document", "path", doc.path, "id", doc.id)
 		stats.documentsDeleted++
 	}
 
-	// Mark all topics as completed
+	// mark all topics as completed
 	if _, err := tx.Exec("UPDATE topics SET status = ? WHERE status != ?", "completed", "completed"); err != nil {
 		return fmt.Errorf("update topic status: %w", err)
 	}
 
+	// commit the transaction to persist all changes
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
@@ -188,19 +222,8 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 	return nil
 }
 
-// syncStats tracks synchronization metrics
-type syncStats struct {
-	topicsCreated    int
-	topicsExisting   int
-	documentsCreated int
-	documentsUpdated int
-	documentsSkipped int
-	documentsDeleted int
-	chunksCreated    int
-}
-
 // insertChunks chunks a document and inserts chunks into database
-// Returns the number of chunks created
+// returns the number of chunks created
 func insertChunks(tx *sql.Tx, topicID, documentID, content string) (int, error) {
 	chunks := loader.SplitByHeading(content)
 	for i, chunk := range chunks {

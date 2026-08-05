@@ -2,9 +2,9 @@ package loader
 
 import "strings"
 
-// SplitByHeading splits content by Markdown "##" headings.
-// Each chunk includes the "##" heading that precedes it.
-// Headings deeper than level 2 (e.g. ###, ####) remain part of the current chunk.
+// splitByHeading splits content by Markdown "##" headings.
+// each chunk includes the "##" heading that precedes it.
+// headings deeper than level 2 (e.g. ###, ####) remain part of the current chunk.
 func SplitByHeading(content string) []string {
 	lines := strings.Split(content, "\n")
 	chunks := []string{}
