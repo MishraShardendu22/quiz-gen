@@ -72,9 +72,23 @@ func Migrate(db *sql.DB) error {
 			error TEXT,
 			FOREIGN KEY (topic_id) REFERENCES topics(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS questions (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			question TEXT NOT NULL,
+			option_1 TEXT NOT NULL,
+			option_2 TEXT NOT NULL,
+			option_3 TEXT NOT NULL,
+			option_4 TEXT NOT NULL,
+			correct_answer INTEGER NOT NULL,
+			explanation TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY (session_id) REFERENCES sessions(id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_documents_topic_id ON documents(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_questions_session_id ON questions(session_id)`,
 	}
 
 	for _, stmt := range statements {

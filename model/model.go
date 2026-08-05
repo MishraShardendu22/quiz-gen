@@ -47,4 +47,13 @@ type Session struct {
 	CreatedAt      int64         `json:"created_at"`
 	UpdatedAt      int64         `json:"updated_at"`
 	Error          *string       `json:"error,omitempty"`
+	Questions      []Question    `json:"questions,omitempty"`
+}
+
+type SessionUsage struct {
+	SessionID        string  `json:"session_id"`
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	EstimatedCost    float64 `json:"estimated_cost"`
 }

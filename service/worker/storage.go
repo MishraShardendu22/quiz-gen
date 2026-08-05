@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -60,6 +61,8 @@ func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 		return nil, fmt.Errorf("query session: %w", err)
 	}
 
+	questions, _ := GetSessionQuestions(db, sessionID)
+
 	return &model.Session{
 		ID:             uuid.MustParse(id),
 		TopicID:        uuid.MustParse(topicID),
@@ -71,7 +74,36 @@ func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 		Error:          errMsg,
+		Questions:      questions,
 	}, nil
+}
+
+// GetSessionQuestions retrieves all generated questions for a session
+func GetSessionQuestions(db *sql.DB, sessionID uuid.UUID) ([]model.Question, error) {
+	rows, err := db.Query(`
+		SELECT id, session_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, created_at
+		FROM questions
+		WHERE session_id = ?
+		ORDER BY created_at ASC
+	`, sessionID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []model.Question
+	for rows.Next() {
+		var q model.Question
+		var qID, sID string
+		if err := rows.Scan(&qID, &sID, &q.Question, &q.Option1, &q.Option2, &q.Option3, &q.Option4, &q.CorrectAnswer, &q.Explanation, &q.CreatedAt); err != nil {
+			return nil, err
+		}
+		q.ID = uuid.MustParse(qID)
+		q.SessionID = uuid.MustParse(sID)
+		questions = append(questions, q)
+	}
+
+	return questions, nil
 }
 
 // GetAllSessions retrieves all sessions ordered by newest first
@@ -197,4 +229,58 @@ func GetTopic(db *sql.DB, topicID uuid.UUID) (*model.Topic, error) {
 	}
 
 	return topic, nil
+}
+
+// SaveQuestions inserts all generated questions inside a single transaction and updates generated_count
+func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questions []model.LLMQuestion) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	now := time.Now().Unix()
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO questions (id, session_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare insert question statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, q := range questions {
+		qID := uuid.Must(uuid.NewV7()).String()
+		_, err := stmt.ExecContext(ctx,
+			qID,
+			sessionID.String(),
+			q.Question,
+			q.Options[0],
+			q.Options[1],
+			q.Options[2],
+			q.Options[3],
+			q.CorrectAnswer,
+			q.Explanation,
+			now,
+		)
+		if err != nil {
+			return fmt.Errorf("insert question: %w", err)
+		}
+	}
+
+	// Update generated_count atomically in the same transaction
+	_, err = tx.ExecContext(ctx, `
+		UPDATE sessions
+		SET generated_count = generated_count + ?, updated_at = ?
+		WHERE id = ?
+	`, len(questions), now, sessionID.String())
+	if err != nil {
+		return fmt.Errorf("update generated_count: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit questions transaction: %w", err)
+	}
+
+	return nil
 }

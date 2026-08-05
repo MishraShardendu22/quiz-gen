@@ -126,26 +126,42 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 	if err != nil {
 		return fmt.Errorf("query all documents: %w", err)
 	}
-	defer allDBDocs.Close()
+
+	type orphanDoc struct {
+		id      string
+		topicID string
+		path    string
+	}
+	var orphans []orphanDoc
 
 	for allDBDocs.Next() {
 		var id, topicID, path string
 		if err := allDBDocs.Scan(&id, &topicID, &path); err != nil {
+			allDBDocs.Close()
 			return err
 		}
 
 		key := topicID + "|" + path
 		if !filesystemDocs[key] {
-			// Document not on filesystem: delete its chunks and the document
-			if _, err := tx.Exec("DELETE FROM chunks WHERE document_id = ?", id); err != nil {
-				return fmt.Errorf("delete chunks for orphaned doc: %w", err)
-			}
-			if _, err := tx.Exec("DELETE FROM documents WHERE id = ?", id); err != nil {
-				return fmt.Errorf("delete orphaned document: %w", err)
-			}
-			util.Info("deleted orphaned document", "path", path, "id", id)
-			stats.documentsDeleted++
+			orphans = append(orphans, orphanDoc{id: id, topicID: topicID, path: path})
 		}
+	}
+	if err := allDBDocs.Err(); err != nil {
+		allDBDocs.Close()
+		return err
+	}
+	allDBDocs.Close()
+
+	for _, doc := range orphans {
+		// Document not on filesystem: delete its chunks and the document
+		if _, err := tx.Exec("DELETE FROM chunks WHERE document_id = ?", doc.id); err != nil {
+			return fmt.Errorf("delete chunks for orphaned doc: %w", err)
+		}
+		if _, err := tx.Exec("DELETE FROM documents WHERE id = ?", doc.id); err != nil {
+			return fmt.Errorf("delete orphaned document: %w", err)
+		}
+		util.Info("deleted orphaned document", "path", doc.path, "id", doc.id)
+		stats.documentsDeleted++
 	}
 
 	// Mark all topics as completed

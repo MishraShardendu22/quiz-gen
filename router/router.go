@@ -5,10 +5,17 @@ import (
 
 	"github.com/MishraShardendu22/quiz-gen/controller"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
-// Setup registers all routes
+// Setup registers all routes and middlewares
 func Setup(app *fiber.App, db *sql.DB) {
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowMethods: "GET, POST, OPTIONS",
+	}))
+
 	app.Get("/topics", controller.GetTopics(db))
 	app.Post("/generate", controller.Generate(db))
 	app.Get("/sessions", controller.GetSessions(db))
