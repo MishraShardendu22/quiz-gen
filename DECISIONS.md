@@ -12,6 +12,10 @@ This document outlines key technical decisions, trade-offs, and intentionally sc
 - **Decision**: Computed SHA-256 hashes of markdown files during filesystem traversal.
 - **Rationale**: Avoids re-chunking unchanged files on startup. If a file hash matches SQLite, ingestion is skipped. If modified, old chunks are purged and updated chunks ingested.
 
+did not implement some thing like where only the chunk edited is changed in database, for simplicity all chunks are deleted and re-ingested if the file is modified. This avoids complex diffing logic and ensures consistency between filesystem and database.
+
+why implement chunking at all ? at current implementation its of no use, it would have been usefull if we had implemented some sort of vector embeddings and semantic search or maybe if we had implemented some sort of LLM based question generation from chunks, but currently for simplycity we are just storing the chunks in database and not using them for anything else. there is a seperate hy 500 line code we can use that as well or just not chunk at all. 
+
 ## 3. Asynchronous Worker Queue & Per-Topic Locking (`TopicLockManager`)
 - **Decision**: In-memory channel queue (`chan uuid.UUID`) processed by a background worker goroutine with a per-topic mutex manager.
 - **Rationale**: Ensures concurrent sessions for different topics execute in parallel without lock contention. For the same topic, mutex locks protect existing question lookups and database writes without holding locks during network requests to OpenRouter.

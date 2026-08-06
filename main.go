@@ -31,28 +31,28 @@ func main() {
 		panic(err)
 	}
 
-	// Step -2: Load content from filesystem
+	// Step - 2: Load content from filesystem
 	loadedTopics, err := loader.LoadContent("./content-pack")
 	if err != nil {
 		util.Error("content discovery failed", "error", err.Error())
 		panic(err)
 	}
 
-	// Sterp 3 - Ingest data into database
+	// Step - 3: Ingest data into database
 	if err := storage.SyncTopicsDocumentsChunks(sqlDB, loadedTopics); err != nil {
 		util.Error("synchronization failed", "error", err.Error())
 		panic(err)
 	}
 
-	// Start HTTP server with production-grade timeouts
+	// Step - 4: Start HTTP server with timeouts
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  30 * time.Second,  // Maximum time Fiber waits for the client to send the entire HTTP request.
+		WriteTimeout: 60 * time.Second,  // Maximum time Fiber waits for the client to read the entire HTTP response.
+		IdleTimeout:  120 * time.Second, // Maximum time Fiber waits for the client to send the next request. (idleTimeout is specifically for persistent (keep-alive) connections.)
 	})
 	router.Setup(app, sqlDB)
 
-	// Start background worker for session processing
+	// Step - 5: Start background worker for session processing
 	worker.Start(sqlDB)
 
 	util.Info("starting http server", "address", ":9000")
