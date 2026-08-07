@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/MishraShardendu22/quiz-gen/model"
@@ -16,31 +17,20 @@ import (
 
 const MaxRegenerationAttempts = 5
 
-// sessionQueue is a buffered channel that holds session IDs waiting to be processed
+// sessionQueue is a buffered channel (size 100) that holds session IDs waiting to be processed
 var sessionQueue = make(chan uuid.UUID, 100)
 
-// Start begins the background worker goroutine that processes queued sessions
-func Start(db *sql.DB) {
-	go processQueue(db)
-	util.Info("session worker started")
-}
-
-// Enqueue adds a session ID to the processing queue
-func Enqueue(sessionID uuid.UUID) error {
-	select {
-	case sessionQueue <- sessionID:
-		util.Info("session queued", "session_id", sessionID.String())
-		return nil
-	default:
-		return ErrQueueFull
-	}
-}
-
+// this is where worker starts
+// begins the background worker goroutine that processes queued sessions
 // processQueue runs in a goroutine and continuously processes queued sessions
-func processQueue(db *sql.DB) {
-	for sessionID := range sessionQueue {
-		processSession(db, sessionID)
-	}
+func Start(db *sql.DB) {
+	go func() {
+		for sessionID := range sessionQueue {
+			processSession(db, sessionID)
+		}
+	}()
+
+	util.Info("session worker started")
 }
 
 // processSession handles a single session from start to finish
@@ -74,9 +64,10 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 	client := openrouter.GetClient()
 
-	// Generation Loop until requested_count is reached or failure occurs
+	// number of questions = requested count
+	// generation Loop until requested_count is reached or failure occurs
 	for session.GeneratedCount < session.RequestedCount {
-		// Check budget before every OpenRouter request
+		// check budget before every OpenRouter request
 		latestSession, err := GetSession(db, sessionID)
 		if err == nil {
 			session = latestSession
@@ -113,6 +104,8 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 		// 6. Generate candidate questions (no lock held during network call)
 		candidateQuestions, usage, err := llmretry.GenerateWithRetry(ctx, client, sessionID.String(), promptStr)
+
+		// usage is basically the token usage and cost of the LLM call, we store it in DB for reporting
 		if usage != nil {
 			_ = StoreUsage(db, sessionID, usage, openrouter.DefaultModel)
 		}
@@ -128,8 +121,9 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 		var topicExhausted bool
 
+		// judge duplicates and regenerate only the duplicates up to MaxRegenerationAttempts
 		for regenAttempt := 1; regenAttempt <= MaxRegenerationAttempts; regenAttempt++ {
-			// Fetch fresh list of existing questions under lock for judging
+			// fetch fresh list of existing questions under lock for judging
 			var currentTopicQuestions []model.Question
 			func() {
 				unlock := LockTopic(session.TopicID)
@@ -137,14 +131,14 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 				currentTopicQuestions, _ = GetTopicQuestions(db, session.TopicID)
 			}()
 
-			// Add questions accepted so far in this session to comparison set
+			// add questions accepted so far in this session to comparison set
 			for _, aq := range acceptedQuestions {
 				currentTopicQuestions = append(currentTopicQuestions, model.Question{
 					Question: aq.Question,
 				})
 			}
 
-			// Judge duplicates (no lock held during network call)
+			// judge duplicates (no lock held during network call)
 			dupIndices, judgeUsage, judgeErr := judge.JudgeDuplicates(ctx, client, currentTopicQuestions, currentBatch)
 			if judgeUsage != nil {
 				_ = StoreUsage(db, sessionID, judgeUsage, openrouter.DefaultModel)
@@ -153,13 +147,13 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			dupCount := len(dupIndices)
 			util.Info("judge result", "session_id", sessionID.String(), "attempt", regenAttempt, "duplicate_count", dupCount, "judge_err", judgeErr)
 
-			// Map of duplicate indices
+			// map of duplicate indices
 			isDuplicate := make(map[int]bool)
 			for _, idx := range dupIndices {
 				isDuplicate[idx] = true
 			}
 
-			// Filter out unique questions from current batch
+			// filter out unique questions from current batch
 			nextBatchDuplicatesNeeded := 0
 			for idx, q := range currentBatch {
 				if isDuplicate[idx] {
@@ -170,30 +164,31 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			}
 
 			if nextBatchDuplicatesNeeded == 0 {
-				// All questions in current batch are unique!
+				// all questions in current batch are unique!
 				break
 			}
 
-			// If duplicate questions exist and maximum regeneration attempts reached
+			// if duplicate questions exist and maximum regeneration attempts reached
 			if regenAttempt == MaxRegenerationAttempts {
 				topicExhausted = true
 				break
 			}
 
-			// Check budget before regenerating duplicates
+			// check budget before regenerating duplicates
 			currSess, _ := GetSession(db, sessionID)
 			if currSess != nil && (currSess.TokenBudget-currSess.TokensUsed) <= 0 {
 				util.Warn("budget exhaustion during regeneration", "session_id", sessionID.String())
 				break
 			}
 
-			// Regenerate ONLY the duplicate questions count
+			// regenerate ONLY the duplicate questions count
 			regenPrompt, err := prompt.BuildPromptWithExisting(ctx, db, session.TopicID, nextBatchDuplicatesNeeded, currentTopicQuestions)
 			if err != nil {
 				util.Error("failed to build regen prompt", "session_id", sessionID.String(), "error", err.Error())
 				break
 			}
 
+			// regenerate questions
 			regenBatch, regenUsage, regenErr := llmretry.GenerateWithRetry(ctx, client, sessionID.String(), regenPrompt)
 			if regenUsage != nil {
 				_ = StoreUsage(db, sessionID, regenUsage, openrouter.DefaultModel)
@@ -207,7 +202,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			util.Info("regeneration attempts", "session_id", sessionID.String(), "attempt", regenAttempt, "regenerated_count", len(currentBatch))
 		}
 
-		// Save accepted unique questions to DB under TopicLock
+		// save accepted unique questions to DB under TopicLock
 		if len(acceptedQuestions) > 0 {
 			var saveErr error
 			func() {
@@ -223,7 +218,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			}
 		}
 
-		// Reload session status after save
+		// reload session status after save
 		latestSession, _ = GetSession(db, sessionID)
 		if latestSession != nil {
 			session = latestSession
@@ -237,7 +232,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 		}
 	}
 
-	// 8. Mark session completed if all requested questions were generated
+	// 8. mark session completed if all requested questions were generated
 	err = UpdateSessionStatus(db, sessionID, model.SessionCompleted)
 	if err != nil {
 		util.Error("failed to mark session as completed", "session_id", sessionID.String(), "error", err.Error())
@@ -246,3 +241,17 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 	util.Info("session completed", "session_id", sessionID.String(), "topic_id", session.TopicID.String(), "generated_count", session.GeneratedCount)
 }
+
+// Enqueue adds a session ID to the processing queue
+func Enqueue(sessionID uuid.UUID) error {
+	select {
+	case sessionQueue <- sessionID:
+		util.Info("session queued", "session_id", sessionID.String())
+		return nil
+	default:
+		return ErrQueueFull
+	}
+}
+
+// ErrQueueFull is returned when trying to enqueue a session but the queue is full
+var ErrQueueFull = errors.New("session queue is full")

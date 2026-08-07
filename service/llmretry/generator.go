@@ -13,7 +13,7 @@ import (
 
 const MaxRetries = 3
 
-// GenerateWithRetry attempts to generate questions with LLM retries
+// attempts to generate questions with LLM retries
 // Flow: Generate -> Clean -> Parse -> Validate -> Success or Retry (Max 3 attempts)
 func GenerateWithRetry(ctx context.Context, client *openrouter.Client, sessionID string, prompt string) ([]model.LLMQuestion, *openrouter.Usage, error) {
 	var lastErr error
@@ -37,7 +37,7 @@ func GenerateWithRetry(ctx context.Context, client *openrouter.Client, sessionID
 		// 2. Clean JSON
 		cleaned := openrouter.CleanJSON(response)
 
-		// 3. Parse JSON
+		// 3. Parse JSON - if parsing fails, we retry
 		var llmResp model.LLMResponse
 		if err := json.Unmarshal([]byte(cleaned), &llmResp); err != nil {
 			util.Error("JSON parsing failed", "session_id", sessionID, "attempt", attempt, "retry_reason", err.Error())

@@ -16,13 +16,15 @@ did not implement some thing like where only the chunk edited is changed in data
 
 why implement chunking at all ? at current implementation its of no use, it would have been usefull if we had implemented some sort of vector embeddings and semantic search or maybe if we had implemented some sort of LLM based question generation from chunks, but currently for simplycity we are just storing the chunks in database and not using them for anything else. there is a seperate hy 500 line code we can use that as well or just not chunk at all. 
 
+cost of llms i am using free models so basically hardcoded free models else I would have to fetch cost of llm using some api there was really no need
+
 ## 3. Asynchronous Worker Queue & Per-Topic Locking (`TopicLockManager`)
 - **Decision**: In-memory channel queue (`chan uuid.UUID`) processed by a background worker goroutine with a per-topic mutex manager.
 - **Rationale**: Ensures concurrent sessions for different topics execute in parallel without lock contention. For the same topic, mutex locks protect existing question lookups and database writes without holding locks during network requests to OpenRouter.
 
 ## 4. LLM-as-Judge Duplicate Prevention & 5-Attempt Limit
 - **Decision**: Implemented an LLM-as-Judge comparison pass (`service/judge/judge.go`) that checks candidate questions against all previously generated questions for the topic.
-- **Rationale**: Rather than using vector embeddings or cosine similarity (which require extra dependencies or local models), LLM judging detects semantic duplicates directly in prompt context. A maximum of 5 regeneration attempts is enforced to prevent infinite loops on topic exhaustion.
+- **Rationale**: Rather than using vector embeddings or cosine similarity (which require extra dependencies or local models), LLM judging detects semantic duplicates directly in pro[mpt context. A maximum of 5 regeneration attempts is enforced to prevent infinite loops on topic exhaustion.
 
 ## 5. Token Budget Limitation & Partial Failures
 - **Decision**: Token budget (`remaining_budget = token_budget - tokens_used`) is evaluated before every OpenRouter completion request.

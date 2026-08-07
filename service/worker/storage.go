@@ -88,7 +88,7 @@ func CreateSessionWithIdempotencyKey(db *sql.DB, topicID uuid.UUID, requestedCou
 	return newSession, false, nil
 }
 
-// GetSession retrieves a session by ID from the database
+// retrieves a session by ID from the database
 func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 	var id, topicID, status string
 	var requestedCount, generatedCount, tokenBudget, tokensUsed int
@@ -125,7 +125,7 @@ func GetSession(db *sql.DB, sessionID uuid.UUID) (*model.Session, error) {
 	}, nil
 }
 
-// GetSessionQuestions retrieves all generated questions for a session
+// retrieves all generated questions for a session
 func GetSessionQuestions(db *sql.DB, sessionID uuid.UUID) ([]model.Question, error) {
 	rows, err := db.Query(`
 		SELECT id, session_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, created_at
@@ -157,7 +157,7 @@ func GetSessionQuestions(db *sql.DB, sessionID uuid.UUID) ([]model.Question, err
 	return questions, nil
 }
 
-// GetTopicQuestions retrieves all generated questions across all sessions for a specific topic
+// retrieves all generated questions across all sessions for a specific topic
 func GetTopicQuestions(db *sql.DB, topicID uuid.UUID) ([]model.Question, error) {
 	rows, err := db.Query(`
 		SELECT q.id, q.session_id, q.question, q.option_1, q.option_2, q.option_3, q.option_4, q.correct_answer, q.explanation, q.created_at
@@ -235,7 +235,7 @@ func GetAllSessions(db *sql.DB) ([]*model.Session, error) {
 	return sessions, nil
 }
 
-// UpdateSessionStatus updates only the status and updated_at timestamp
+// updates only the status and updated_at timestamp
 func UpdateSessionStatus(db *sql.DB, sessionID uuid.UUID, newStatus model.SessionStatus) error {
 	now := time.Now().Unix()
 	result, err := db.Exec(`
@@ -259,7 +259,7 @@ func UpdateSessionStatus(db *sql.DB, sessionID uuid.UUID, newStatus model.Sessio
 	return nil
 }
 
-// UpdateSessionError updates the status to failed and records the error message
+// updates the status to failed and records the error message
 func UpdateSessionError(db *sql.DB, sessionID uuid.UUID, errMsg string) error {
 	now := time.Now().Unix()
 	result, err := db.Exec(`
@@ -272,6 +272,7 @@ func UpdateSessionError(db *sql.DB, sessionID uuid.UUID, errMsg string) error {
 		return fmt.Errorf("update session error: %w", err)
 	}
 
+	// used to verify that the UPDATE actually modified a row matching the WHERE clause
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("rows affected: %w", err)
@@ -283,7 +284,7 @@ func UpdateSessionError(db *sql.DB, sessionID uuid.UUID, errMsg string) error {
 	return nil
 }
 
-// GetTopic retrieves a topic by ID from the database
+// retrieves a topic by ID from the database
 func GetTopic(db *sql.DB, topicID uuid.UUID) (*model.Topic, error) {
 	var id, name, status string
 	var parentID *string
@@ -315,7 +316,7 @@ func GetTopic(db *sql.DB, topicID uuid.UUID) (*model.Topic, error) {
 	return topic, nil
 }
 
-// SaveQuestions inserts all generated questions inside a single transaction and updates generated_count
+// inserts all generated questions inside a single transaction and updates generated_count
 func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questions []model.LLMQuestion) error {
 	if len(questions) == 0 {
 		return nil
@@ -328,6 +329,9 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 	defer tx.Rollback()
 
 	now := time.Now().Unix()
+	
+	// a prepared statement is a SQL statement that the database parses and compiles once
+	// then can be executed multiple times with different parameters. 
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO questions (id, session_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -337,6 +341,7 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 	}
 	defer stmt.Close()
 
+	// execute the prepared statement for each question
 	for _, q := range questions {
 		qID := uuid.Must(uuid.NewV7()).String()
 		_, err := stmt.ExecContext(ctx,
@@ -356,7 +361,7 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 		}
 	}
 
-	// Update generated_count atomically in the same transaction
+	// update generated_count atomically in the same transaction
 	_, err = tx.ExecContext(ctx, `
 		UPDATE sessions
 		SET generated_count = generated_count + ?, updated_at = ?
@@ -373,7 +378,7 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 	return nil
 }
 
-// GetIdempotencyKey looks up an idempotency key and returns the mapped session_id if found
+// looks up an idempotency key and returns the mapped session_id if found
 func GetIdempotencyKey(db *sql.DB, key string) (string, error) {
 	var sessionID string
 	err := db.QueryRow(`

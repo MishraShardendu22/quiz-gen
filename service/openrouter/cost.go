@@ -27,17 +27,7 @@ func GetModelPricing(model string) ModelPricing {
 	}
 }
 
-// EstimateCost calculates the estimated cost for a generation
-// Takes model name, prompt tokens, and completion tokens
-// Returns cost in USD as a float64
-func EstimateCost(model string, promptTokens, completionTokens int) float64 {
-	pricing := GetModelPricing(model)
-	promptCost := float64(promptTokens) * pricing.PromptTokenPrice / 1000.0
-	completionCost := float64(completionTokens) * pricing.CompletionTokenPrice / 1000.0
-	return promptCost + completionCost
-}
-
-// EstimateCostFromUsage calculates cost from a Usage struct
+// calculates cost from a Usage struct
 func EstimateCostFromUsage(model string, usage *Usage) float64 {
 	if usage == nil {
 		return 0.0
@@ -45,7 +35,16 @@ func EstimateCostFromUsage(model string, usage *Usage) float64 {
 	return EstimateCost(model, usage.PromptTokens, usage.CompletionTokens)
 }
 
-// FormatCost returns a formatted cost string
+// calculates the estimated cost for a generation
+// takes model name, prompt tokens, and completion tokens, eturns cost in USD as a float64
+func EstimateCost(model string, promptTokens, completionTokens int) float64 {
+	pricing := GetModelPricing(model)
+	promptCost := float64(promptTokens) * pricing.PromptTokenPrice / 1000.0
+	completionCost := float64(completionTokens) * pricing.CompletionTokenPrice / 1000.0
+	return promptCost + completionCost
+}
+
+// returns a formatted cost string
 func FormatCost(cost float64) string {
 	if cost == 0.0 {
 		return "$0.00"

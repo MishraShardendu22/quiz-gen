@@ -11,8 +11,8 @@ import (
 	"github.com/MishraShardendu22/quiz-gen/util"
 )
 
-// JudgeDuplicates sends existing questions and newly generated questions to LLM as Judge
-// Returns the 0-based indices of newly generated questions that are semantically equivalent to any existing question
+// sends existing questions and newly generated questions to LLM as Judge
+// returns the 0-based indices of newly generated questions that are semantically equivalent to any existing question
 func JudgeDuplicates(ctx context.Context, client *openrouter.Client, existing []model.Question, newQuestions []model.LLMQuestion) ([]int, *openrouter.Usage, error) {
 	if len(newQuestions) == 0 {
 		return []int{}, nil, nil

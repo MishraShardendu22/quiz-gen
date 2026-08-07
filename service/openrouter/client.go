@@ -60,14 +60,11 @@ type OpenRouterErrorResponse struct {
 	} `json:"error"`
 }
 
-// GetClient returns the singleton OpenRouter client instance
+// returns the singleton OpenRouter client instance
 func GetClient() *Client {
 	once.Do(func() {
+		model := DefaultModel
 		apiKey := os.Getenv("OPENROUTER_API_KEY")
-		model := os.Getenv("OPENROUTER_MODEL")
-		if model == "" {
-			model = DefaultModel
-		}
 
 		rc := resty.New()
 		rc.SetBaseURL(DefaultBaseURL)
@@ -91,7 +88,22 @@ func GetClient() *Client {
 				return false
 			}
 			status := r.StatusCode()
-			// Retry ONLY on 429, 500, 502, 503, 504. Do NOT retry 400, 401, 403, 404, 422.
+
+			/*
+				Retry ONLY on 429, 500, 502, 503, 504. (There could be a possible automatic fix for these error)
+				- 429: Too Many Requests (rate limiting)
+				- 500: Internal Server Error
+				- 502: Bad Gateway
+				- 503: Service Unavailable
+				- 504: Gateway Timeout
+
+				Do NOT retry 400, 401, 403, 404, 422.
+				- 400: Bad Request (invalid request)
+				- 401: Unauthorized (invalid API key)
+				- 403: Forbidden (insufficient permissions)
+				- 404: Not Found (invalid endpoint)
+				- 422: Unprocessable Entity (invalid input data)
+			*/ 
 			return status == 429 || status == 500 || status == 502 || status == 503 || status == 504
 		})
 
@@ -120,7 +132,7 @@ func GetClient() *Client {
 	return instance
 }
 
-// GenerateQuestions sends a prompt to OpenRouter API and returns the generated content and usage
+// sends a prompt to OpenRouter API and returns the generated content and usage
 func (c *Client) GenerateQuestions(ctx context.Context, prompt string) (string, *Usage, error) {
 	reqBody := ChatRequest{
 		Model: c.model,

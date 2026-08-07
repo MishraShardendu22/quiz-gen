@@ -29,6 +29,7 @@ func (m *TopicLockManager) getLock(topicID string) *sync.Mutex {
 }
 
 // LockTopic acquires the lock for a specific topic_id and returns an unlock function
+// basically prevents concurrent sessions for the same topic from reading the same existing questions and inserting overlapping questions
 func LockTopic(topicID uuid.UUID) func() {
 	lock := globalTopicLocks.getLock(topicID.String())
 	lock.Lock()

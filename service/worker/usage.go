@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// StoreUsage stores usage information for a session and updates tokens_used
+// stores usage information for a session and updates tokens_used
 func StoreUsage(db *sql.DB, sessionID uuid.UUID, usage *openrouter.Usage, modelName string) error {
 	if usage == nil {
 		return nil
@@ -47,7 +47,7 @@ func StoreUsage(db *sql.DB, sessionID uuid.UUID, usage *openrouter.Usage, modelN
 	return tx.Commit()
 }
 
-// GetUsageReport fetches aggregated usage and per-session breakdown
+// fetches aggregated usage and per-session breakdown
 func GetUsageReport(db *sql.DB) (*model.UsageResponse, error) {
 	var resp model.UsageResponse
 
