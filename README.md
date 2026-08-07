@@ -39,6 +39,12 @@ An enterprise-grade, asynchronous quiz question generation engine built in **Go 
 
 ## 🚀 Setup & Execution
 
+### Quick Start (Single Command)
+```bash
+# Installs dependencies for backend and frontend, then launches both concurrently
+make run
+```
+
 ### Prerequisites
 - **Go**: 1.22 or higher
 - **Node.js**: 18+ & `npm`

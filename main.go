@@ -1,8 +1,6 @@
 package main
 
 import (
-	"time"
-
 	"github.com/MishraShardendu22/quiz-gen/router"
 	"github.com/MishraShardendu22/quiz-gen/service/db"
 	"github.com/MishraShardendu22/quiz-gen/service/loader"
@@ -13,10 +11,10 @@ import (
 )
 
 func main() {
-	util.Info("starting application")
+	util.Info("starting application", "model", util.Config.ModelName)
 
 	// Step - 1: Initialize the database
-	sqlDB, err := db.Init("./quiz.db")
+	sqlDB, err := db.Init(util.Config.DatabasePath)
 	if err != nil {
 		util.Error("database initialization failed", "error", err.Error())
 		panic(err)
@@ -32,7 +30,7 @@ func main() {
 	}
 
 	// Step - 2: Load content from filesystem
-	loadedTopics, err := loader.LoadContent("./content-pack")
+	loadedTopics, err := loader.LoadContent(util.Config.ContentPackDir)
 	if err != nil {
 		util.Error("content discovery failed", "error", err.Error())
 		panic(err)
@@ -44,19 +42,19 @@ func main() {
 		panic(err)
 	}
 
-	// Step - 4: Start HTTP server with timeouts
+	// Step - 4: Start HTTP server with timeouts configured from util.Config
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  30 * time.Second,  // Maximum time Fiber waits for the client to send the entire HTTP request.
-		WriteTimeout: 60 * time.Second,  // Maximum time Fiber waits for the client to read the entire HTTP response.
-		IdleTimeout:  120 * time.Second, // Maximum time Fiber waits for the client to send the next request. (idleTimeout is specifically for persistent (keep-alive) connections.)
+		ReadTimeout:  util.Config.ReadTimeout,
+		WriteTimeout: util.Config.WriteTimeout,
+		IdleTimeout:  util.Config.IdleTimeout,
 	})
 	router.Setup(app, sqlDB)
 
 	// Step - 5: Start background worker for session processing
 	worker.Start(sqlDB)
 
-	util.Info("starting http server", "address", ":9000")
-	if err := app.Listen(":9000"); err != nil {
+	util.Info("starting http server", "address", util.Config.ServerPort)
+	if err := app.Listen(util.Config.ServerPort); err != nil {
 		util.Error("server failed", "error", err.Error())
 		panic(err)
 	}

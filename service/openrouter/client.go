@@ -3,23 +3,14 @@ package openrouter
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/go-resty/resty/v2"
 )
 
-const (
-	DefaultModel   = "inclusionai/ling-3.0-flash:free"
-	DefaultBaseURL = "https://openrouter.ai/api/v1"
-	DefaultTimeout = 60 * time.Second
-)
-
 type Client struct {
 	restyClient *resty.Client
-	model       string
 }
 
 var (
@@ -60,27 +51,27 @@ type OpenRouterErrorResponse struct {
 	} `json:"error"`
 }
 
-// returns the singleton OpenRouter client instance
+// GetClient returns the singleton OpenRouter client instance configured via util.Config.
 func GetClient() *Client {
 	once.Do(func() {
-		model := DefaultModel
-		apiKey := os.Getenv("OPENROUTER_API_KEY")
+		apiKey := util.Config.OpenRouterAPIKey
+		baseURL := util.Config.OpenRouterBaseURL
+		timeout := util.Config.HTTPTimeout
 
 		rc := resty.New()
-		rc.SetBaseURL(DefaultBaseURL)
-		rc.SetTimeout(DefaultTimeout)
+		rc.SetBaseURL(baseURL)
+		rc.SetTimeout(timeout)
 		if apiKey != "" {
 			rc.SetHeader("Authorization", "Bearer "+apiKey)
 		}
 		rc.SetHeader("Content-Type", "application/json")
 
-		// Resty retry configuration
-		rc.SetRetryCount(3)
-		rc.SetRetryWaitTime(2 * time.Second)
-		rc.SetRetryMaxWaitTime(10 * time.Second)
+		// Resty retry configuration using util.Config
+		rc.SetRetryCount(util.Config.RetryCount)
+		rc.SetRetryWaitTime(util.Config.RetryWaitTime)
+		rc.SetRetryMaxWaitTime(util.Config.RetryMaxWaitTime)
 
 		rc.AddRetryCondition(func(r *resty.Response, err error) bool {
-			// Network error
 			if err != nil {
 				return true
 			}
@@ -88,22 +79,6 @@ func GetClient() *Client {
 				return false
 			}
 			status := r.StatusCode()
-
-			/*
-				Retry ONLY on 429, 500, 502, 503, 504. (There could be a possible automatic fix for these error)
-				- 429: Too Many Requests (rate limiting)
-				- 500: Internal Server Error
-				- 502: Bad Gateway
-				- 503: Service Unavailable
-				- 504: Gateway Timeout
-
-				Do NOT retry 400, 401, 403, 404, 422.
-				- 400: Bad Request (invalid request)
-				- 401: Unauthorized (invalid API key)
-				- 403: Forbidden (insufficient permissions)
-				- 404: Not Found (invalid endpoint)
-				- 422: Unprocessable Entity (invalid input data)
-			*/ 
 			return status == 429 || status == 500 || status == 502 || status == 503 || status == 504
 		})
 
@@ -126,16 +101,20 @@ func GetClient() *Client {
 
 		instance = &Client{
 			restyClient: rc,
-			model:       model,
 		}
 	})
 	return instance
 }
 
-// sends a prompt to OpenRouter API and returns the generated content and usage
+// GetModel returns the configured model name from util.Config
+func (c *Client) GetModel() string {
+	return util.Config.ModelName
+}
+
+// GenerateQuestions sends a prompt to OpenRouter API
 func (c *Client) GenerateQuestions(ctx context.Context, prompt string) (string, *Usage, error) {
 	reqBody := ChatRequest{
-		Model: c.model,
+		Model: c.GetModel(),
 		Messages: []ChatMessage{
 			{
 				Role:    "user",

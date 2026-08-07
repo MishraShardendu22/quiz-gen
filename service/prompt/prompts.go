@@ -3,7 +3,7 @@ package prompt
 /*
   DefaultAvoidInstruction is the default instruction to avoid generating duplicate questions. (in that same prompt)
   AvoidDuplicatesInstruction is the instruction to avoid generating duplicate questions, including a list of existing questions. (in that same prompt)
-*/ 
+*/
 
 const DefaultAvoidInstruction = `
 Do not generate questions that are semantically equivalent to any existing question.`

@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 
 	"github.com/MishraShardendu22/quiz-gen/model"
@@ -20,9 +19,7 @@ const MaxRegenerationAttempts = 5
 // sessionQueue is a buffered channel (size 100) that holds session IDs waiting to be processed
 var sessionQueue = make(chan uuid.UUID, 100)
 
-// this is where worker starts
-// begins the background worker goroutine that processes queued sessions
-// processQueue runs in a goroutine and continuously processes queued sessions
+// Start begins the background worker goroutine that processes queued sessions
 func Start(db *sql.DB) {
 	go func() {
 		for sessionID := range sessionQueue {
@@ -64,29 +61,28 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 	client := openrouter.GetClient()
 
-	// number of questions = requested count
-	// generation Loop until requested_count is reached or failure occurs
+	// Generation Loop until requested_count is reached or failure occurs
 	for session.GeneratedCount < session.RequestedCount {
-		// check budget before every OpenRouter request
+		// BEFORE EVERY OpenRouter REQUEST: load latest session from DB
 		latestSession, err := GetSession(db, sessionID)
 		if err == nil {
 			session = latestSession
 		}
 
-		remainingBudget := session.TokenBudget - session.TokensUsed
-		if remainingBudget <= 0 {
-			failMsg := "Token budget exhausted."
+		// Check actual recorded usage against budget before issuing another LLM request
+		if session.TokensUsed >= session.TokenBudget {
+			failMsg := "Token budget exhausted before next LLM request."
 			if session.GeneratedCount > 0 {
 				failMsg = fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
 			}
-			util.Warn("budget exhaustion", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed, "generated_count", session.GeneratedCount)
+			util.Warn("budget exhausted before request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed, "generated_count", session.GeneratedCount)
 			_ = UpdateSessionError(db, sessionID, failMsg)
 			return
 		}
 
 		neededCount := session.RequestedCount - session.GeneratedCount
 
-		// 4. Fetch existing topic questions for prompt under lock (released before network call)
+		// Fetch existing topic questions for prompt under lock
 		var existingTopicQuestions []model.Question
 		func() {
 			unlock := LockTopic(session.TopicID)
@@ -94,7 +90,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			existingTopicQuestions, _ = GetTopicQuestions(db, session.TopicID)
 		}()
 
-		// 5. Build prompt with existing questions
+		// build prompt with existing questions
 		promptStr, err := prompt.BuildPromptWithExisting(ctx, db, session.TopicID, neededCount, existingTopicQuestions)
 		if err != nil {
 			util.Error("failed to build prompt", "session_id", sessionID.String(), "error", err.Error())
@@ -102,26 +98,40 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			return
 		}
 
-		// 6. Generate candidate questions (no lock held during network call)
+		// issue generation LLM request
 		candidateQuestions, usage, err := llmretry.GenerateWithRetry(ctx, client, sessionID.String(), promptStr)
 
-		// usage is basically the token usage and cost of the LLM call, we store it in DB for reporting
+		// after EVERY OpenRouter REQUEST: record actual usage and update session.tokens_used
 		if usage != nil {
-			_ = StoreUsage(db, sessionID, usage, openrouter.DefaultModel)
+			_ = StoreUsage(db, sessionID, usage, client.GetModel())
 		}
+
+		// Reload session to inspect updated tokens_used
+		latestSession, _ = GetSession(db, sessionID)
+		if latestSession != nil {
+			session = latestSession
+		}
+
 		if err != nil {
 			util.Error("generation failed for session", "session_id", sessionID.String(), "error", err.Error())
 			_ = UpdateSessionError(db, sessionID, err.Error())
 			return
 		}
 
-		// 7. Judge & Regeneration Loop (up to MaxRegenerationAttempts = 5)
+		// post-request budget check: if actual reported tokens_used exceeded budget
+		if session.TokensUsed > session.TokenBudget {
+			failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+			util.Warn("budget exhausted post-request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed, "generated_count", session.GeneratedCount)
+			_ = UpdateSessionError(db, sessionID, failMsg)
+			return
+		}
+
+		// judge & regeneration Loop (up to MaxRegenerationAttempts = 5)
 		acceptedQuestions := make([]model.LLMQuestion, 0)
 		currentBatch := candidateQuestions
 
 		var topicExhausted bool
 
-		// judge duplicates and regenerate only the duplicates up to MaxRegenerationAttempts
 		for regenAttempt := 1; regenAttempt <= MaxRegenerationAttempts; regenAttempt++ {
 			// fetch fresh list of existing questions under lock for judging
 			var currentTopicQuestions []model.Question
@@ -131,29 +141,52 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 				currentTopicQuestions, _ = GetTopicQuestions(db, session.TopicID)
 			}()
 
-			// add questions accepted so far in this session to comparison set
 			for _, aq := range acceptedQuestions {
 				currentTopicQuestions = append(currentTopicQuestions, model.Question{
 					Question: aq.Question,
 				})
 			}
 
-			// judge duplicates (no lock held during network call)
+			// before every openRouter request (LLM Judge): check budget using actual recorded usage
+			currSess, _ := GetSession(db, sessionID)
+			if currSess != nil {
+				session = currSess
+			}
+
+			if session.TokensUsed >= session.TokenBudget {
+				failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+				util.Warn("budget exhausted before judge request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed)
+				_ = UpdateSessionError(db, sessionID, failMsg)
+				return
+			}
+
+			// 
 			dupIndices, judgeUsage, judgeErr := judge.JudgeDuplicates(ctx, client, currentTopicQuestions, currentBatch)
 			if judgeUsage != nil {
-				_ = StoreUsage(db, sessionID, judgeUsage, openrouter.DefaultModel)
+				_ = StoreUsage(db, sessionID, judgeUsage, client.GetModel())
+			}
+
+			// Reload session to check tokens_used post judge call
+			currSess, _ = GetSession(db, sessionID)
+			if currSess != nil {
+				session = currSess
+			}
+
+			if session.TokensUsed > session.TokenBudget {
+				failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+				util.Warn("budget exhausted post-judge request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed)
+				_ = UpdateSessionError(db, sessionID, failMsg)
+				return
 			}
 
 			dupCount := len(dupIndices)
 			util.Info("judge result", "session_id", sessionID.String(), "attempt", regenAttempt, "duplicate_count", dupCount, "judge_err", judgeErr)
 
-			// map of duplicate indices
 			isDuplicate := make(map[int]bool)
 			for _, idx := range dupIndices {
 				isDuplicate[idx] = true
 			}
 
-			// filter out unique questions from current batch
 			nextBatchDuplicatesNeeded := 0
 			for idx, q := range currentBatch {
 				if isDuplicate[idx] {
@@ -164,35 +197,46 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			}
 
 			if nextBatchDuplicatesNeeded == 0 {
-				// all questions in current batch are unique!
 				break
 			}
 
-			// if duplicate questions exist and maximum regeneration attempts reached
 			if regenAttempt == MaxRegenerationAttempts {
 				topicExhausted = true
 				break
 			}
 
-			// check budget before regenerating duplicates
-			currSess, _ := GetSession(db, sessionID)
-			if currSess != nil && (currSess.TokenBudget-currSess.TokensUsed) <= 0 {
-				util.Warn("budget exhaustion during regeneration", "session_id", sessionID.String())
-				break
+			// BEFORE EVERY OpenRouter REQUEST (Regeneration): check budget using actual recorded usage
+			if session.TokensUsed >= session.TokenBudget {
+				failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+				util.Warn("budget exhausted before regen request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed)
+				_ = UpdateSessionError(db, sessionID, failMsg)
+				return
 			}
 
-			// regenerate ONLY the duplicate questions count
 			regenPrompt, err := prompt.BuildPromptWithExisting(ctx, db, session.TopicID, nextBatchDuplicatesNeeded, currentTopicQuestions)
 			if err != nil {
 				util.Error("failed to build regen prompt", "session_id", sessionID.String(), "error", err.Error())
 				break
 			}
 
-			// regenerate questions
 			regenBatch, regenUsage, regenErr := llmretry.GenerateWithRetry(ctx, client, sessionID.String(), regenPrompt)
 			if regenUsage != nil {
-				_ = StoreUsage(db, sessionID, regenUsage, openrouter.DefaultModel)
+				_ = StoreUsage(db, sessionID, regenUsage, client.GetModel())
 			}
+
+			// Reload session to check tokens_used post regen call
+			currSess, _ = GetSession(db, sessionID)
+			if currSess != nil {
+				session = currSess
+			}
+
+			if session.TokensUsed > session.TokenBudget {
+				failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+				util.Warn("budget exhaustion post-regen request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed)
+				_ = UpdateSessionError(db, sessionID, failMsg)
+				return
+			}
+
 			if regenErr != nil {
 				util.Error("regeneration LLM failed", "session_id", sessionID.String(), "error", regenErr.Error())
 				break
@@ -202,7 +246,12 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			util.Info("regeneration attempts", "session_id", sessionID.String(), "attempt", regenAttempt, "regenerated_count", len(currentBatch))
 		}
 
-		// save accepted unique questions to DB under TopicLock
+		// QUESTION STORAGE - Trim accepted questions before storing so generated_count never exceeds requested_count
+		if len(acceptedQuestions) > neededCount {
+			acceptedQuestions = acceptedQuestions[:neededCount]
+		}
+
+		// Save accepted unique questions to DB under TopicLock
 		if len(acceptedQuestions) > 0 {
 			var saveErr error
 			func() {
@@ -218,10 +267,18 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			}
 		}
 
-		// reload session status after save
+		// Reload session status after save to reflect updated tokens_used and generated_count
 		latestSession, _ = GetSession(db, sessionID)
 		if latestSession != nil {
 			session = latestSession
+		}
+
+		// POST REQUEST VALIDATION - Compare actual tokens_used against token_budget
+		if session.TokensUsed > session.TokenBudget {
+			failMsg := fmt.Sprintf("Token budget exhausted after generating %d of %d questions.", session.GeneratedCount, session.RequestedCount)
+			util.Warn("budget exhaustion post-request", "session_id", sessionID.String(), "token_budget", session.TokenBudget, "tokens_used", session.TokensUsed, "generated_count", session.GeneratedCount)
+			_ = UpdateSessionError(db, sessionID, failMsg)
+			return
 		}
 
 		if topicExhausted {
@@ -232,7 +289,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 		}
 	}
 
-	// 8. mark session completed if all requested questions were generated
+	// Mark session completed if all requested questions were generated
 	err = UpdateSessionStatus(db, sessionID, model.SessionCompleted)
 	if err != nil {
 		util.Error("failed to mark session as completed", "session_id", sessionID.String(), "error", err.Error())
@@ -249,9 +306,6 @@ func Enqueue(sessionID uuid.UUID) error {
 		util.Info("session queued", "session_id", sessionID.String())
 		return nil
 	default:
-		return ErrQueueFull
+		return fmt.Errorf("session queue is full")
 	}
 }
-
-// ErrQueueFull is returned when trying to enqueue a session but the queue is full
-var ErrQueueFull = errors.New("session queue is full")

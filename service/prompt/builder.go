@@ -57,7 +57,7 @@ func BuildPromptWithExisting(ctx context.Context, db *sql.DB, topicID uuid.UUID,
 		existingStr = DefaultAvoidInstruction
 	}
 
-	// create the final prompt 
+	// create the final prompt
 	prompt := fmt.Sprintf(GeneratorPromptTemplate, requestedCount, combinedContent, existingStr)
 
 	return prompt, nil

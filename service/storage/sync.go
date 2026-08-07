@@ -64,11 +64,11 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 			util.Info("created new topic", "name", loadedTopic.Name, "id", topicID)
 			stats.topicsCreated++
 
-		// some other error occurred while querying the topic
+			// some other error occurred while querying the topic
 		} else if err != nil {
 			return fmt.Errorf("query topic %s: %w", loadedTopic.Name, err)
-		
-		// topic already exists, use its ID
+
+			// topic already exists, use its ID
 		} else {
 			util.Info("using existing topic", "name", loadedTopic.Name, "id", topicID)
 			stats.topicsExisting++
@@ -107,12 +107,12 @@ func SyncTopicsDocumentsChunks(db *sql.DB, loadedTopics []model.LoadedTopic) err
 				util.Info("created new document", "topic", loadedTopic.Name, "path", doc.Path, "chunks", chunkCount)
 				stats.documentsCreated++
 				stats.chunksCreated += chunkCount
-			
-			// error while querying document
+
+				// error while querying document
 			} else if err != nil {
 				return fmt.Errorf("query document %s: %w", doc.Path, err)
 
-			// document exists, check if content hash has changed
+				// document exists, check if content hash has changed
 			} else {
 				if existingHash == doc.Hash {
 					// Hash unchanged: skip completely

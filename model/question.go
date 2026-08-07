@@ -17,7 +17,7 @@ type Question struct {
 	Option2       string    `json:"option_2"`
 	Option3       string    `json:"option_3"`
 	Option4       string    `json:"option_4"`
-	CorrectAnswer int       `json:"correct_answer"` 
+	CorrectAnswer int       `json:"correct_answer"`
 	Explanation   string    `json:"explanation"`
 	CreatedAt     int64     `json:"created_at"`
 }

@@ -40,8 +40,8 @@ func Generate(db *sql.DB) fiber.Handler {
 			return util.ErrorResponse(c, 400, "requested_count must be greater than 0", nil)
 		}
 
-		if req.RequestedCount > worker.MaxRequestedCount {
-			return util.ErrorResponse(c, 400, "requested_count exceeds maximum of "+strconv.Itoa(worker.MaxRequestedCount), nil)
+		if req.RequestedCount > util.Config.MaxRequestedCount {
+			return util.ErrorResponse(c, 400, "requested_count exceeds maximum of "+strconv.Itoa(util.Config.MaxRequestedCount), nil)
 		}
 
 		// Validate token_budget

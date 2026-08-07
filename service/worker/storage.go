@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/MishraShardendu22/quiz-gen/model"
+	"github.com/MishraShardendu22/quiz-gen/util"
 	"github.com/google/uuid"
 )
 
 // MaxRequestedCount is the maximum number of questions that can be requested per session
-const MaxRequestedCount = 100
+var MaxRequestedCount = util.Config.MaxRequestedCount
 
 // CreateSession inserts a new session with pending status into the database
 func CreateSession(db *sql.DB, topicID uuid.UUID, requestedCount, tokenBudget int) (*model.Session, error) {
@@ -329,9 +330,9 @@ func SaveQuestions(ctx context.Context, db *sql.DB, sessionID uuid.UUID, questio
 	defer tx.Rollback()
 
 	now := time.Now().Unix()
-	
+
 	// a prepared statement is a SQL statement that the database parses and compiles once
-	// then can be executed multiple times with different parameters. 
+	// then can be executed multiple times with different parameters.
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO questions (id, session_id, question, option_1, option_2, option_3, option_4, correct_answer, explanation, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

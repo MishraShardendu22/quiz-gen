@@ -18,7 +18,7 @@ func StoreUsage(db *sql.DB, sessionID uuid.UUID, usage *openrouter.Usage, modelN
 
 	now := time.Now().Unix()
 	usageID := uuid.Must(uuid.NewV7()).String()
-	estimatedCost := openrouter.EstimateCost(modelName, usage.PromptTokens, usage.CompletionTokens)
+	estimatedCost := openrouter.CalculateCost(modelName, usage.PromptTokens, usage.CompletionTokens)
 
 	tx, err := db.Begin()
 	if err != nil {

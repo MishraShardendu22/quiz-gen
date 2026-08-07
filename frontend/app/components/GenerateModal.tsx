@@ -12,19 +12,23 @@ interface GenerateModalProps {
 export function GenerateModal({ topic, onClose }: GenerateModalProps) {
   const router = useRouter();
   const [requestedCount, setRequestedCount] = useState<number>(5);
-  const [tokenBudget, setTokenBudget] = useState<number>(4000);
+  const [tokenBudget, setTokenBudget] = useState<number>(8000);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (requestedCount > 20) {
+      setError("Question count cannot exceed 20");
+      return;
+    }
     setLoading(true);
     setError(null);
 
     try {
       const res = await api.createGenerate({
         topic_id: topic.id,
-        requested_count: requestedCount,
+        requested_count: Math.min(20, Math.max(1, requestedCount)),
         token_budget: tokenBudget,
       });
 
@@ -62,14 +66,17 @@ export function GenerateModal({ topic, onClose }: GenerateModalProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">
-              Question Count (1-100)
+              Question Count (1-20)
             </label>
             <input
               type="number"
               min={1}
-              max={100}
+              max={20}
               value={requestedCount}
-              onChange={(e) => setRequestedCount(parseInt(e.target.value) || 1)}
+              onChange={(e) => {
+                const val = parseInt(e.target.value) || 1;
+                setRequestedCount(val > 20 ? 20 : val);
+              }}
               required
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />

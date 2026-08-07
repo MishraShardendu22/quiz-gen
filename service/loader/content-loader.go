@@ -28,13 +28,13 @@ func LoadContent(contentPackDir string) ([]model.LoadedTopic, error) {
 	// traverse the folderes
 	for _, entry := range entries {
 
-		// if the entry is not a directory or is a hidden folder, skip it 
-		// .Name() returns the base name of the file or directory 
-// 		//	content-pack/
+		// if the entry is not a directory or is a hidden folder, skip it
+		// .Name() returns the base name of the file or directory
+		// 		//	content-pack/
 		//	 ├── cpp/
 		//	 │   ├── intro.md
 		//	 │   └── stl/
-		//	 └── python/		
+		//	 └── python/
 		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
@@ -45,7 +45,7 @@ func LoadContent(contentPackDir string) ([]model.LoadedTopic, error) {
 		// create a new LoadedTopic struct for the topic
 		loadedTopic := &model.LoadedTopic{
 			// folder name
-			Name:      entry.Name(),
+			Name: entry.Name(),
 
 			// initialize an empty slice of documents
 			Documents: []model.Document{},
@@ -60,7 +60,6 @@ func LoadContent(contentPackDir string) ([]model.LoadedTopic, error) {
 
 		util.Info("topic discovery complete", "name", entry.Name(), "documents", len(loadedTopic.Documents))
 
-		// 
 		topicsMap[entry.Name()] = loadedTopic
 		loadedTopics = append(loadedTopics, *loadedTopic)
 	}
