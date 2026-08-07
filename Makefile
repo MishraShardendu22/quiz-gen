@@ -2,10 +2,10 @@
 
 .DEFAULT_GOAL := run
 
-# File target for frontend node_modules (only reinstalls when package.json or pnpm-lock.yaml changes)
-frontend/node_modules: frontend/package.json frontend/pnpm-lock.yaml
-	@echo "==> Installing frontend dependencies (pnpm)..."
-	cd frontend && pnpm install
+# File target for frontend node_modules (only reinstalls when package.json or package-lock.json changes)
+frontend/node_modules: frontend/package.json frontend/package-lock.json
+	@echo "==> Installing frontend dependencies (npm)..."
+	cd frontend && npm install
 	@touch frontend/node_modules
 
 ## install-backend: Download Go dependencies for backend
@@ -27,14 +27,14 @@ run-backend:
 ## run-frontend: Run Next.js frontend dev server
 run-frontend:
 	@echo "==> Starting frontend dev server on http://localhost:3000..."
-	cd frontend && pnpm dev
+	cd frontend && npm run dev
 
 ## run: Check/install dependencies and run both backend and frontend concurrently
 run: install
 	@echo "==> Starting both backend and frontend servers concurrently..."
 	@bash -c "trap 'trap - SIGINT SIGTERM EXIT; kill 0' SIGINT SIGTERM EXIT; \
 		(go run main.go) & \
-		(cd frontend && pnpm dev) & \
+		(cd frontend && npm run dev) & \
 		wait"
 
 ## test: Run backend tests
@@ -50,7 +50,7 @@ help:
 	@echo "  run               Install dependencies (if missing/updated) and run both frontend and backend (Default)"
 	@echo "  install           Check/install dependencies for both frontend and backend"
 	@echo "  install-backend   Check/install Go backend dependencies"
-	@echo "  install-frontend  Check/install npm/pnpm frontend dependencies"
+	@echo "  install-frontend  Check/install npm frontend dependencies"
 	@echo "  run-backend       Run backend server only"
 	@echo "  run-frontend      Run frontend dev server only"
 	@echo "  test              Run backend tests"

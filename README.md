@@ -4,7 +4,7 @@ An enterprise-grade, asynchronous quiz question generation engine built in **Go 
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
                           ┌──────────────────────────┐
@@ -50,7 +50,7 @@ make run
 - **Node.js**: 18+ & `npm`
 - **OpenRouter API Key**: Set in `.env` or exported in shell.
 
-### 1. Backend Setup
+### 1. Setup
 ```bash
 # Clone and enter project directory
 cd quiz-gen
@@ -59,27 +59,14 @@ cd quiz-gen
 echo 'OPENROUTER_API_KEY="sk-or-v1-your-key-here"' > .env
 
 # Build and run backend (starts on :9000)
-go build -o quiz-gen main.go
-./quiz-gen
-```
-
-### 2. Frontend Setup
-```bash
-# Enter frontend directory
-cd frontend
-
-# Install dependencies
-npm install
-
-# Run dev server (starts on :3000)
-npm run dev
+make run
 ```
 
 Open `http://localhost:3000` in your browser.
 
 ---
 
-## 📡 API Documentation
+## API Documentation
 
 ### `GET /topics`
 Retrieves all discovered content topics with document counts.

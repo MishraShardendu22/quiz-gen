@@ -110,3 +110,13 @@ The application currently rejects requests for more than 20 questions.
 If larger requests, for example 500 questions, were to be supported, the system would need to implement batch generation, producing questions incrementally (for example, 20 questions per batch) until the requested number is reached.
 
 This has not been implemented yet because it is unnecessary for the current requirements, but it would be a reasonable improvement if larger-scale generation becomes necessary.
+
+## 11. Why only test for small cleaning utilities?
+
+I only created unit tests for small cleaning utilities like `cleanMarkdown` and `cleanQuestion`. The other functions I simply tested manually with a frontend interface. 
+
+## 12. Cache repeated or identical generation requests to avoid redundant LLM calls.
+I didnt implement this because -
+    - Even for Identical prompt, the response of llm is not deterministic, plus it has context of previous questions, so it will one way or the other create question that are not duplicate. 
+    - Caching is helpful when the response is some what deterministic, but in this case it is not. So caching will not help much. 
+    - Although the assignment mentions caching repeated requests, it also requires that questions generated in a new session must not duplicate questions from any previous session. Reusing a cached question set would violate that requirement by returning identical questions across sessions.
