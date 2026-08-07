@@ -44,9 +44,9 @@ Supporting paid models would require retrieving each model's input and output to
 
 ## 5. Asynchronous Worker Queue & Per-Topic Locking (`TopicLockManager`)
 
-The system uses an in-memory channel queue (`chan uuid.UUID`) processed by a background worker goroutine with a per-topic mutex manager.
+The system uses an in-memory channel queue (`chan uuid.UUID`) processed by a configurable worker pool (default `runtime.NumCPU()`) with a per-topic mutex manager (`TopicLockManager`).
 
-This ensures that concurrent sessions for different topics execute in parallel without lock contention. For the same topic, mutex locks protect existing question lookups and database writes without holding locks during network requests to OpenRouter.
+This ensures that concurrent sessions for different topics execute in parallel across worker goroutines without lock contention. For sessions targeting the same topic, `TopicLockManager` serializes processing to protect existing question lookups and database writes without holding locks during network requests to OpenRouter.
 
 ---
 

@@ -19,15 +19,63 @@ const MaxRegenerationAttempts = 5
 // sessionQueue is a buffered channel (size 100) that holds session IDs waiting to be processed
 var sessionQueue = make(chan uuid.UUID, 100)
 
-// Start begins the background worker goroutine that processes queued sessions
+// Start begins the background worker pool that processes queued sessions
 func Start(db *sql.DB) {
-	go func() {
-		for sessionID := range sessionQueue {
-			processSession(db, sessionID)
-		}
-	}()
+	workerCount := util.Config.WorkerCount
+	if workerCount <= 0 {
+		workerCount = 1
+	}
 
-	util.Info("session worker started")
+	for i := 0; i < workerCount; i++ {
+		go func() {
+			for sessionID := range sessionQueue {
+				processSession(db, sessionID)
+			}
+		}()
+	}
+
+	util.Info("session worker pool started", "workers", workerCount)
+
+	// Recover pending or interrupted processing sessions from database on boot
+	recoverPendingSessions(db)
+}
+
+func recoverPendingSessions(db *sql.DB) {
+	rows, err := db.Query(`
+		SELECT id, status FROM sessions
+		WHERE status IN ('pending', 'processing')
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		util.Error("failed to query pending sessions for recovery", "error", err.Error())
+		return
+	}
+	defer rows.Close()
+
+	var count int
+	for rows.Next() {
+		var sidStr, statusStr string
+		if err := rows.Scan(&sidStr, &statusStr); err != nil {
+			continue
+		}
+		sid, err := uuid.Parse(sidStr)
+		if err != nil {
+			continue
+		}
+
+		if model.SessionStatus(statusStr) == model.SessionProcessing {
+			_ = UpdateSessionStatus(db, sid, model.SessionPending)
+		}
+
+		if err := Enqueue(sid); err != nil {
+			util.Warn("failed to enqueue recovered session", "session_id", sidStr, "error", err.Error())
+		} else {
+			count++
+		}
+	}
+	if count > 0 {
+		util.Info("recovered pending sessions on startup", "count", count)
+	}
 }
 
 // processSession handles a single session from start to finish
@@ -59,6 +107,10 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 		return
 	}
 
+	// Acquire per-topic lock for the duration of session processing to prevent concurrent same-topic sessions from racing
+	unlock := LockTopic(session.TopicID)
+	defer unlock()
+
 	client := openrouter.GetClient()
 
 	// Generation Loop until requested_count is reached or failure occurs
@@ -82,13 +134,8 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 		neededCount := session.RequestedCount - session.GeneratedCount
 
-		// Fetch existing topic questions for prompt under lock
-		var existingTopicQuestions []model.Question
-		func() {
-			unlock := LockTopic(session.TopicID)
-			defer unlock()
-			existingTopicQuestions, _ = GetTopicQuestions(db, session.TopicID)
-		}()
+		// Fetch existing topic questions for prompt under topic lock
+		existingTopicQuestions, _ := GetTopicQuestions(db, session.TopicID)
 
 		// build prompt with existing questions
 		promptStr, err := prompt.BuildPromptWithExisting(ctx, db, session.TopicID, neededCount, existingTopicQuestions)
@@ -133,13 +180,8 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 		var topicExhausted bool
 
 		for regenAttempt := 1; regenAttempt <= MaxRegenerationAttempts; regenAttempt++ {
-			// fetch fresh list of existing questions under lock for judging
-			var currentTopicQuestions []model.Question
-			func() {
-				unlock := LockTopic(session.TopicID)
-				defer unlock()
-				currentTopicQuestions, _ = GetTopicQuestions(db, session.TopicID)
-			}()
+			// fetch fresh list of existing questions under topic lock for judging
+			currentTopicQuestions, _ := GetTopicQuestions(db, session.TopicID)
 
 			for _, aq := range acceptedQuestions {
 				currentTopicQuestions = append(currentTopicQuestions, model.Question{
@@ -160,7 +202,6 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 				return
 			}
 
-			// 
 			dupIndices, judgeUsage, judgeErr := judge.JudgeDuplicates(ctx, client, currentTopicQuestions, currentBatch)
 			if judgeUsage != nil {
 				_ = StoreUsage(db, sessionID, judgeUsage, client.GetModel())
@@ -179,8 +220,14 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 				return
 			}
 
+			if judgeErr != nil {
+				util.Error("judge duplicate detection failed", "session_id", sessionID.String(), "error", judgeErr.Error())
+				_ = UpdateSessionError(db, sessionID, "Duplicate judge failed: "+judgeErr.Error())
+				return
+			}
+
 			dupCount := len(dupIndices)
-			util.Info("judge result", "session_id", sessionID.String(), "attempt", regenAttempt, "duplicate_count", dupCount, "judge_err", judgeErr)
+			util.Info("judge result", "session_id", sessionID.String(), "attempt", regenAttempt, "duplicate_count", dupCount)
 
 			isDuplicate := make(map[int]bool)
 			for _, idx := range dupIndices {
@@ -253,13 +300,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 
 		// Save accepted unique questions to DB under TopicLock
 		if len(acceptedQuestions) > 0 {
-			var saveErr error
-			func() {
-				unlock := LockTopic(session.TopicID)
-				defer unlock()
-				saveErr = SaveQuestions(ctx, db, sessionID, acceptedQuestions)
-			}()
-
+			saveErr := SaveQuestions(ctx, db, sessionID, acceptedQuestions)
 			if saveErr != nil {
 				util.Error("failed to store questions", "session_id", sessionID.String(), "error", saveErr.Error())
 				_ = UpdateSessionError(db, sessionID, "Question storage failed: "+saveErr.Error())

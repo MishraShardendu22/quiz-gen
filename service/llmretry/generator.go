@@ -17,7 +17,7 @@ const MaxRetries = 3
 // Flow: Generate -> Clean -> Parse -> Validate -> Success or Retry (Max 3 attempts)
 func GenerateWithRetry(ctx context.Context, client *openrouter.Client, sessionID string, prompt string) ([]model.LLMQuestion, *openrouter.Usage, error) {
 	var lastErr error
-	var lastUsage *openrouter.Usage
+	var totalUsage *openrouter.Usage
 
 	for attempt := 1; attempt <= MaxRetries; attempt++ {
 		util.Info("LLM generation attempt", "session_id", sessionID, "attempt", attempt, "max_retries", MaxRetries)
@@ -30,8 +30,14 @@ func GenerateWithRetry(ctx context.Context, client *openrouter.Client, sessionID
 			continue
 		}
 
+		// earlier we were not tracking total usage across retries, now we are tracking it
 		if usage != nil {
-			lastUsage = usage
+			if totalUsage == nil {
+				totalUsage = &openrouter.Usage{}
+			}
+			totalUsage.PromptTokens += usage.PromptTokens
+			totalUsage.CompletionTokens += usage.CompletionTokens
+			totalUsage.TotalTokens += usage.TotalTokens
 		}
 
 		// 2. Clean JSON
@@ -54,8 +60,8 @@ func GenerateWithRetry(ctx context.Context, client *openrouter.Client, sessionID
 
 		// 5. Success
 		util.Info("generation success", "session_id", sessionID, "attempt", attempt, "question_count", len(llmResp.Questions))
-		return llmResp.Questions, usage, nil
+		return llmResp.Questions, totalUsage, nil
 	}
 
-	return nil, lastUsage, fmt.Errorf("failed to generate valid questions after %d attempts: %v", MaxRetries, lastErr)
+	return nil, totalUsage, fmt.Errorf("failed to generate valid questions after %d attempts: %v", MaxRetries, lastErr)
 }

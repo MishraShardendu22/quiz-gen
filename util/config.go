@@ -2,6 +2,7 @@ package util
 
 import (
 	"os"
+	"runtime"
 	"time"
 )
 
@@ -17,6 +18,7 @@ type ConfigStruct struct {
 	RetryMaxWaitTime   time.Duration
 	DefaultTokenBudget int
 	MaxRequestedCount  int
+	WorkerCount        int
 	ServerPort         string
 	DatabasePath       string
 	ContentPackDir     string
@@ -31,6 +33,7 @@ var Config = ConfigStruct{
 	RetryCount:         3,
 	MaxRequestedCount:  20,
 	DefaultTokenBudget: 5000,
+	WorkerCount:        runtime.NumCPU(),
 	ServerPort:         ":9000",
 	DatabasePath:       "./quiz.db",
 	ContentPackDir:     "./content-pack",
@@ -44,3 +47,4 @@ var Config = ConfigStruct{
 	OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"),
 	ModelName:          "cohere/north-mini-code:free",
 }
+
