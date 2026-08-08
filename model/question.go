@@ -7,7 +7,7 @@ import "github.com/google/uuid"
 	LLMQuestion represents a single question from the LLM response
 	LLMResponse represents the structure of the LLM response
 	JudgeResult represents the response from the LLM Judge
-*/ 
+*/
 
 type Question struct {
 	ID            uuid.UUID `json:"id"`

@@ -28,10 +28,10 @@ func Init(dbPath string) (*sql.DB, error) {
 	// busy_timeout is basically, if there is a lock for some variable wait for it to open for 5 seconds before throwing an error.
 	// foreign_keys enables enforcement of foreign key constraints in SQLite for the current database connection
 	// synchronous =
-		// OFF - SQLite rarely calls fsync()
-		// FULL - SQLite calls fsync() after every write operation
-		// NORMAL - SQLite calls fsync() less frequently than FULL but more frequently than OFF.
-	// fsync() is a system call that flushes data to disk, ensuring that it is physically written and not just cached in memory. 
+	// OFF - SQLite rarely calls fsync()
+	// FULL - SQLite calls fsync() after every write operation
+	// NORMAL - SQLite calls fsync() less frequently than FULL but more frequently than OFF.
+	// fsync() is a system call that flushes data to disk, ensuring that it is physically written and not just cached in memory.
 	// The synchronous setting determines how often SQLite calls fsync() to ensure data durability and integrity.
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
@@ -127,15 +127,15 @@ func Migrate(db *sql.DB) error {
 		)`,
 
 		// Primary keys are indexed automatically
-	
+
 		`CREATE INDEX IF NOT EXISTS idx_chunks_topic_id ON chunks(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_topic_id ON sessions(topic_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_documents_topic_id ON documents(topic_id)`,
-				
+
 		`CREATE INDEX IF NOT EXISTS idx_usage_session_id ON usage(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_questions_session_id ON questions(session_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_idempotency_keys_session_id ON idempotency_keys(session_id)`,
-		
+
 		`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks(document_id)`,
 	}
 

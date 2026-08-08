@@ -6,7 +6,7 @@ import (
 
 /*
 	Base models for the application.
-	
+
 	Topic represents a logical topic under which documents are grouped.
 	Document represents a file belonging to a topic. The Path field stores the relative path from the topic root, preserving nested directories.
 

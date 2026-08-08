@@ -63,9 +63,11 @@ OPENROUTER_API_KEY="sk-or-v1-your-openrouter-key-here"
 
 *(Alternatively, export `OPENROUTER_API_KEY` in your shell environment).*
 
-### 2. Run the Service (Single Command)
+### 2. Run the Service
 
-Run the backend and frontend concurrently with missing dependency installation:
+#### Option A: Using `make` (Recommended Single Command)
+
+Run the backend and frontend concurrently with automatic dependency installation:
 
 ```bash
 make run
@@ -77,7 +79,33 @@ This single command will:
 3. Start the Fiber backend server on `http://localhost:9000`.
 4. Start the Next.js frontend dev server on `http://localhost:3000`.
 
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+#### Option B: Without `make` (Manual / Windows / Systems without `make`)
+
+If your system does not have `make` installed, run the backend and frontend in two separate terminal windows:
+Was
+**Terminal 1 (Backend Server):**
+```bash
+# Download Go dependencies
+go mod tidy
+
+# Start Fiber backend on http://localhost:9000
+go run main.go
+```
+
+**Terminal 2 (Frontend Dashboard):**
+```bash
+# Navigate to frontend directory
+cd frontend
+
+# Install Node.js dependencies
+npm install
+
+# Start Next.js dev server on http://localhost:3000
+npm run dev
+```
+
+Open **[http://localhost:3000](http://localhost:3000)** in your browser once both servers are running.
+
 
 ---
 

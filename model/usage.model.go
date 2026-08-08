@@ -5,7 +5,7 @@ package model
 	SessionUsage represents the usage metrics for a single quiz generation session.
 	UsageBreakdown represents the usage metrics for a single session, including prompt and completion tokens, total tokens, and estimated cost.
 	UsageResponse represents the aggregated usage metrics across all sessions, including total prompt tokens, total completion tokens, total tokens, estimated cost, and a breakdown of usage per session.
-*/ 
+*/
 
 type SessionUsage struct {
 	SessionID        string  `json:"session_id"`

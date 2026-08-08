@@ -1,8 +1,10 @@
 package util
 
 import (
+	"bufio"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -46,5 +48,34 @@ var Config = ConfigStruct{
 	OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
 	OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"),
 	ModelName:          "cohere/north-mini-code:free",
+}
+
+func init() {
+	if Config.OpenRouterAPIKey == "" {
+		Config.OpenRouterAPIKey = loadEnvKey(".env", "OPENROUTER_API_KEY")
+	}
+}
+
+// loadEnvKey parses a key from a simple .env file without external dependencies
+func loadEnvKey(filePath, key string) string {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 && strings.TrimSpace(parts[0]) == key {
+			val := strings.TrimSpace(parts[1])
+			return strings.Trim(val, `"'`)
+		}
+	}
+	return ""
 }
 

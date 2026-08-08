@@ -6,7 +6,7 @@ package model
 	GenerateRequest is a struct that represents the request payload for generating a quiz.
 	GenerateResponse is a struct that represents the response payload for a quiz generation request.
 	RetrySessionRequest is a struct that represents the request payload for retrying a quiz generation session.
-*/ 
+*/
 type Response[T any] struct {
 	Code    int    `json:"code"`
 	Success bool   `json:"success"`
