@@ -52,6 +52,8 @@ type OpenRouterErrorResponse struct {
 }
 
 // GetClient returns the singleton OpenRouter client instance configured via util.Config.
+// sync.Once is being used to make GetClient() initialize the OpenRouter client exactly once, even if multiple goroutines call it concurrently
+// reuses the HTTP client's connection pool, which can reuse existing TCP/TLS connections when possible.
 func GetClient() *Client {
 	once.Do(func() {
 		apiKey := util.Config.OpenRouterAPIKey

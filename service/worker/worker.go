@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const MaxRegenerationAttempts = 5
+const MaxRegenerationAttempts = 1
 
 // sessionQueue is a buffered channel (size 100) that holds session IDs waiting to be processed
 var sessionQueue = make(chan uuid.UUID, 100)
@@ -78,6 +78,36 @@ func recoverPendingSessions(db *sql.DB) {
 	}
 }
 
+
+/*
+processSession()
+    │
+    ├── Load session
+    ├── Mark session PROCESSING
+    ├── Verify topic exists
+    ├── Acquire topic lock
+    │
+    └── while generated < requested
+          │
+          ├── Reload session from DB
+          ├── Check token budget
+          ├── Load existing topic questions
+          ├── Build generation prompt
+          ├── Call LLM
+          ├── Record token usage
+          │
+          ├── Duplicate/judge loop
+          │     ├── Call judge LLM
+          │     ├── Identify duplicates
+          │     ├── Keep unique questions
+          │     └── Regenerate duplicates
+          │
+          ├── Save accepted questions
+          ├── Reload session
+          └── Check budget / exhaustion
+    │
+    └── Mark session COMPLETED
+*/ 
 // processSession handles a single session from start to finish
 func processSession(db *sql.DB, sessionID uuid.UUID) {
 	ctx := context.Background()
@@ -159,6 +189,7 @@ func processSession(db *sql.DB, sessionID uuid.UUID) {
 			session = latestSession
 		}
 
+		// If generation failed, log and mark session error
 		if err != nil {
 			util.Error("generation failed for session", "session_id", sessionID.String(), "error", err.Error())
 			_ = UpdateSessionError(db, sessionID, err.Error())

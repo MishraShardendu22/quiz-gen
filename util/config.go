@@ -32,7 +32,7 @@ type ConfigStruct struct {
 // Config is the global configuration instance used across all packages.
 // .env ONLY contains OPENROUTER_API_KEY; all other settings are hardcoded here as constants.
 var Config = ConfigStruct{
-	RetryCount:         3,
+	RetryCount:         2,
 	MaxRequestedCount:  20,
 	DefaultTokenBudget: 5000,
 	WorkerCount:        runtime.NumCPU(),
@@ -47,7 +47,7 @@ var Config = ConfigStruct{
 	IdleTimeout:        120 * time.Second,
 	OpenRouterBaseURL:  "https://openrouter.ai/api/v1",
 	OpenRouterAPIKey:   os.Getenv("OPENROUTER_API_KEY"),
-	ModelName:          "cohere/north-mini-code:free",
+	ModelName:          "poolside/laguna-xs-2.1:free",
 }
 
 func init() {

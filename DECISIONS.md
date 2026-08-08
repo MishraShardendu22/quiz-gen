@@ -50,11 +50,11 @@ This ensures that concurrent sessions for different topics execute in parallel a
 
 ---
 
-## 6. LLM-as-Judge Duplicate Prevention & 5-Attempt Limit
+## 6. LLM-as-Judge Duplicate Prevention & 2-Attempt Limit
 
 An LLM-as-Judge comparison pass (`service/judge/judge.go`) checks candidate questions against all previously generated questions for the topic.
 
-Rather than using vector embeddings or cosine similarity, which require additional dependencies or local models, the LLM performs semantic duplicate detection directly. A maximum of five regeneration attempts is enforced to prevent infinite loops when the topic is exhausted.
+Rather than using vector embeddings or cosine similarity, which require additional dependencies or local models, the LLM performs semantic duplicate detection directly. A maximum of two regeneration attempts is enforced to prevent infinite loops when the topic is exhausted.
 
 **Why not use embeddings?**
 

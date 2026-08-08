@@ -11,7 +11,7 @@ import (
 	"github.com/MishraShardendu22/quiz-gen/util"
 )
 
-const MaxRetries = 3
+const MaxRetries = 2
 
 // attempts to generate questions with LLM retries
 // Flow: Generate -> Clean -> Parse -> Validate -> Success or Retry (Max 3 attempts)
