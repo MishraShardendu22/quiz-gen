@@ -28,7 +28,7 @@ func CreateSessionWithIdempotencyKey(db *sql.DB, topicID uuid.UUID, requestedCou
 	}
 	defer tx.Rollback()
 
-	// Check idempotency key if supplied
+	// Check session idempotency key if supplied
 	if idempotencyKey != "" {
 		var existingSessionID string
 		err := tx.QueryRow(`
